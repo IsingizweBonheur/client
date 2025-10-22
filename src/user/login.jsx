@@ -4,7 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faUser, faEnvelope, faLock, faSignInAlt, 
   faUserPlus, faSpinner, faArrowLeft, faHamburger,
-  faKey, faArrowRight, faCheckCircle, faExclamationTriangle
+  faKey, faCheckCircle, faExclamationTriangle
 } from '@fortawesome/free-solid-svg-icons';
 
 // User context simulation
@@ -14,7 +14,7 @@ const useUser = () => {
       const saved = localStorage.getItem('user');
       return saved ? JSON.parse(saved) : null;
     } catch (error) {
-      console.error('Error parsing user data:', error);
+      console.error('Error parsing user data from localStorage:', error);
       return null;
     }
   });
@@ -24,7 +24,7 @@ const useUser = () => {
       setUser(userData);
       localStorage.setItem('user', JSON.stringify(userData));
     } catch (error) {
-      console.error('Error saving user data:', error);
+      console.error('Error saving user data to localStorage:', error);
     }
   };
 
@@ -33,7 +33,7 @@ const useUser = () => {
     try {
       localStorage.removeItem('user');
     } catch (error) {
-      console.error('Error removing user data:', error);
+      console.error('Error removing user data from localStorage:', error);
     }
   };
 
@@ -47,11 +47,11 @@ const validateEmail = (email) => {
 };
 
 const validatePassword = (password) => {
-  return password.length >= 6;
+  return password && password.length >= 6;
 };
 
 const validateUsername = (username) => {
-  return username.length >= 3 && username.length <= 20;
+  return username && username.length >= 3 && username.length <= 20;
 };
 
 const UserLogin = () => {
@@ -69,50 +69,15 @@ const UserLogin = () => {
   const [formErrors, setFormErrors] = useState({});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const [messageType, setMessageType] = useState(''); // 'success', 'error', 'info'
+  const [messageType, setMessageType] = useState('');
   const { login } = useUser();
 
-  const BACKEND_URL = API_URL;
+  const API_BASE_URL = API_URL;
 
-  const validateForm = () => {
-    const errors = {};
-
-    if (!formData.email) {
-      errors.email = 'Email is required';
-    } else if (!validateEmail(formData.email)) {
-      errors.email = 'Please enter a valid email address';
-    }
-
-    if (!formData.password) {
-      errors.password = 'Password is required';
-    } else if (!validatePassword(formData.password)) {
-      errors.password = 'Password must be at least 6 characters';
-    }
-
-    if (!isLogin) {
-      if (!formData.username) {
-        errors.username = 'Username is required';
-      } else if (!validateUsername(formData.username)) {
-        errors.username = 'Username must be between 3 and 20 characters';
-      }
-    }
-
-    if (showResetPassword) {
-      if (!formData.newPassword) {
-        errors.newPassword = 'New password is required';
-      } else if (!validatePassword(formData.newPassword)) {
-        errors.newPassword = 'Password must be at least 6 characters';
-      }
-
-      if (!formData.confirmPassword) {
-        errors.confirmPassword = 'Please confirm your password';
-      } else if (formData.newPassword !== formData.confirmPassword) {
-        errors.confirmPassword = 'Passwords do not match';
-      }
-    }
-
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
+  // Clear all messages and errors
+  const clearMessages = () => {
+    setMessage('');
+    setFormErrors({});
   };
 
   const handleInputChange = (e) => {
@@ -122,7 +87,7 @@ const UserLogin = () => {
       [name]: value
     });
     
-    // Clear error when user starts typing
+    // Clear field-specific error when user starts typing
     if (formErrors[name]) {
       setFormErrors({
         ...formErrors,
@@ -136,20 +101,111 @@ const UserLogin = () => {
     setMessageType(type);
   };
 
-  const clearMessages = () => {
-    setMessage('');
-    setFormErrors({});
+  // Form validation - FIXED: Better validation logic
+  const validateForm = () => {
+    const errors = {};
+
+    // Email validation
+    if (!formData.email.trim()) {
+      errors.email = 'Email is required';
+    } else if (!validateEmail(formData.email)) {
+      errors.email = 'Please enter a valid email address';
+    }
+
+    // Password validation
+    if (!formData.password) {
+      errors.password = 'Password is required';
+    } else if (!validatePassword(formData.password)) {
+      errors.password = 'Password must be at least 6 characters long';
+    }
+
+    // Username validation for registration
+    if (!isLogin) {
+      if (!formData.username.trim()) {
+        errors.username = 'Username is required';
+      } else if (!validateUsername(formData.username)) {
+        errors.username = 'Username must be between 3 and 20 characters';
+      }
+    }
+
+    // Reset password validation
+    if (showResetPassword) {
+      if (!formData.newPassword) {
+        errors.newPassword = 'New password is required';
+      } else if (!validatePassword(formData.newPassword)) {
+        errors.newPassword = 'Password must be at least 6 characters long';
+      }
+
+      if (!formData.confirmPassword) {
+        errors.confirmPassword = 'Please confirm your password';
+      } else if (formData.newPassword !== formData.confirmPassword) {
+        errors.confirmPassword = 'Passwords do not match';
+      }
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
+  // FIXED: Better API request handler with improved error handling
+  const makeApiRequest = async (url, options, timeout = 10000) => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    
+    try {
+      console.log('Making API request to:', url);
+      const response = await fetch(url, {
+        ...options,
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      // Check if response is JSON - FIXED: Handle HTML responses
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        // If we get HTML instead of JSON, it's likely a server error or wrong endpoint
+        const text = await response.text();
+        console.error('Non-JSON response received:', text.substring(0, 200));
+        
+        if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+          throw new Error('Server error: Received HTML instead of JSON response. Please check if the server is running correctly.');
+        }
+        
+        throw new Error(`Server returned unexpected response format: ${contentType}`);
+      }
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        // FIXED: Better error message extraction
+        const errorMessage = data.message || data.error || `Request failed with status ${response.status}`;
+        throw new Error(errorMessage);
+      }
+
+      return data;
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        throw new Error('Request timeout - please try again');
+      }
+      throw error;
+    }
+  };
+
+  // FIXED: Main login/register handler
   const handleSubmit = async (e) => {
     e.preventDefault();
     clearMessages();
 
-    if (!validateForm()) {
+    if (loading) {
+      showMessage('Please wait...', 'info');
       return;
     }
 
-    if (loading) return;
+    if (!validateForm()) {
+      showMessage('Please fix the errors above', 'error');
+      return;
+    }
 
     setLoading(true);
 
@@ -159,16 +215,22 @@ const UserLogin = () => {
         return;
       }
 
-      const endpoint = isLogin ? '/auth/login' : '/auth/register';
+      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register'; // FIXED: Added /api prefix
       const payload = isLogin 
-        ? { email: formData.email, password: formData.password }
+        ? { 
+            email: formData.email.trim().toLowerCase(), 
+            password: formData.password 
+          }
         : { 
             username: formData.username.trim(), 
             email: formData.email.trim().toLowerCase(), 
             password: formData.password 
           };
 
-      const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+      console.log('Sending request to:', `${API_BASE_URL}${endpoint}`);
+      console.log('Payload:', { ...payload, password: '***' }); // Hide password in logs
+
+      const data = await makeApiRequest(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -176,25 +238,21 @@ const UserLogin = () => {
         body: JSON.stringify(payload),
       });
 
-      let data;
-      try {
-        data = await response.json();
-      } catch (parseError) {
-        throw new Error('Invalid response from server');
-      }
-
-      if (!response.ok) {
-        throw new Error(data.message || `Server error: ${response.status}`);
-      }
+      console.log('Response received:', data);
 
       showMessage(data.message, 'success');
 
       if (isLogin) {
         // Store user data and redirect
-        login(data.user);
-        setTimeout(() => {
-          window.location.href = '/userdashboard';
-        }, 1500);
+        if (data.user) {
+          login(data.user);
+          setTimeout(() => {
+            // Use replace to prevent back navigation to login
+            window.location.href = '/userdashboard'; // FIXED: Changed to href for better compatibility
+          }, 1500);
+        } else {
+          throw new Error('No user data received from server');
+        }
       } else {
         // Switch to login after successful registration
         setIsLogin(true);
@@ -203,17 +261,30 @@ const UserLogin = () => {
       }
 
     } catch (error) {
-      console.error('Login/Registration error:', error);
-      showMessage(error.message || 'An unexpected error occurred', 'error');
+      console.error('Authentication error:', error);
+      
+      // FIXED: Better error message handling
+      if (error.name === 'TypeError') {
+        if (error.message.includes('fetch')) {
+          showMessage('Network error: Cannot connect to server. Please check your internet connection and ensure the server is running.', 'error');
+        } else {
+          showMessage('Connection error: Please check if the server is available.', 'error');
+        }
+      } else if (error.message.includes('HTML instead of JSON')) {
+        showMessage('Server configuration error. Please contact administrator.', 'error');
+      } else {
+        showMessage(error.message || 'An unexpected error occurred. Please try again.', 'error');
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  // FIXED: Forgot password handler
   const handleForgotPassword = async () => {
     clearMessages();
 
-    if (!formData.email) {
+    if (!formData.email.trim()) {
       showMessage('Please enter your email address', 'error');
       return;
     }
@@ -223,13 +294,16 @@ const UserLogin = () => {
       return;
     }
 
-    if (loading) return;
+    if (loading) {
+      showMessage('Please wait...', 'info');
+      return;
+    }
 
     setLoading(true);
     showMessage('Sending password reset link...', 'info');
 
     try {
-      const response = await fetch(`${BACKEND_URL}/auth/forgot-password`, {
+      const data = await makeApiRequest(`${API_BASE_URL}/api/auth/forgot-password`, { // FIXED: Added /api prefix
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -237,63 +311,62 @@ const UserLogin = () => {
         body: JSON.stringify({ email: formData.email.trim().toLowerCase() }),
       });
 
-      let data;
-      try {
-        data = await response.json();
-      } catch (parseError) {
-        throw new Error('Invalid response from server');
-      }
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to send reset email');
-      }
-
-      showMessage('✅ Password reset link has been sent to your email! Check your inbox and spam folder.', 'success');
+      showMessage(data.message || 'If an account with that email exists, a password reset link has been sent! Check your inbox and spam folder.', 'success');
       
       // Auto-show reset form in demo mode if token is provided
       if (data.demoResetToken) {
-        console.log('Demo reset token:', data.demoResetToken);
+        console.log('Demo reset token received:', data.demoResetToken);
         
         setTimeout(() => {
           setResetToken(data.demoResetToken);
           setShowForgotPassword(false);
           setShowResetPassword(true);
+          setFormData({ ...formData, email: '' });
           showMessage('You can now set your new password', 'info');
         }, 2000);
       } else {
         setTimeout(() => {
           setShowForgotPassword(false);
-          showMessage('Please check your email for the reset link', 'info');
+          setFormData({ ...formData, email: '' });
         }, 3000);
       }
 
     } catch (error) {
       console.error('Forgot password error:', error);
-      showMessage(error.message || 'Failed to send reset email', 'error');
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        showMessage('Network error: Please check your internet connection', 'error');
+      } else {
+        showMessage(error.message || 'Failed to send reset email. Please try again.', 'error');
+      }
     } finally {
       setLoading(false);
     }
   };
 
+  // FIXED: Reset password handler
   const handleResetPassword = async () => {
     clearMessages();
 
     if (!resetToken) {
-      showMessage('Reset token is missing', 'error');
+      showMessage('Reset token is missing or invalid', 'error');
       return;
     }
 
     if (!validateForm()) {
+      showMessage('Please fix the errors above', 'error');
       return;
     }
 
-    if (loading) return;
+    if (loading) {
+      showMessage('Please wait...', 'info');
+      return;
+    }
 
     setLoading(true);
     showMessage('Resetting your password...', 'info');
 
     try {
-      const response = await fetch(`${BACKEND_URL}/auth/reset-password`, {
+      const data = await makeApiRequest(`${API_BASE_URL}/api/auth/reset-password`, { // FIXED: Added /api prefix
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -304,18 +377,7 @@ const UserLogin = () => {
         }),
       });
 
-      let data;
-      try {
-        data = await response.json();
-      } catch (parseError) {
-        throw new Error('Invalid response from server');
-      }
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to reset password');
-      }
-
-      showMessage('✅ Password reset successfully! You can now login with your new password.', 'success');
+      showMessage(data.message || 'Password reset successfully! You can now login with your new password.', 'success');
       
       // Reset states and go back to login
       setTimeout(() => {
@@ -328,7 +390,11 @@ const UserLogin = () => {
 
     } catch (error) {
       console.error('Reset password error:', error);
-      showMessage(error.message || 'Failed to reset password', 'error');
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        showMessage('Network error: Please check your internet connection', 'error');
+      } else {
+        showMessage(error.message || 'Failed to reset password. Please try again.', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -371,7 +437,7 @@ const UserLogin = () => {
             <div className="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
               <FontAwesomeIcon icon={faKey} className="text-white text-2xl" />
             </div>
-            <h1 className="text-3xl font-bold text-gray-800">Reset Password</h1>
+            <h2 className="text-3xl font-bold text-gray-800">Reset Password</h2>
             <p className="text-gray-600 mt-2">
               Enter your email to receive a reset link
             </p>
@@ -393,37 +459,33 @@ const UserLogin = () => {
                   onChange={handleInputChange}
                   required
                   className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${
-                    formErrors.email ? 'border-red-300' : 'border-gray-300'
+                    formErrors.email ? 'border-red-300 bg-red-50' : 'border-gray-300'
                   }`}
                   aria-describedby={formErrors.email ? "email-error" : undefined}
                 />
               </div>
               {formErrors.email && (
                 <p id="email-error" className="text-red-500 text-sm mt-1 flex items-center">
-                  <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1" />
+                  <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1 text-xs" />
                   {formErrors.email}
                 </p>
               )}
             </div>
 
             {message && (
-              <div 
-                className={`p-4 rounded-lg border ${
-                  messageType === 'success' 
-                    ? 'bg-green-50 border-green-200 text-green-800' 
-                    : messageType === 'error'
-                    ? 'bg-red-50 border-red-200 text-red-800'
-                    : 'bg-blue-50 border-blue-200 text-orange-800'
-                }`}
-                role="alert"
-                aria-live="polite"
-              >
+              <div className={`p-4 rounded-lg border ${
+                messageType === 'success' 
+                  ? 'bg-green-50 border-green-200 text-green-800' 
+                  : messageType === 'error'
+                  ? 'bg-red-50 border-red-200 text-red-800'
+                  : 'bg-blue-50 border-blue-200 text-blue-800'
+              }`}>
                 <div className="flex items-center">
                   <FontAwesomeIcon 
                     icon={messageType === 'success' ? faCheckCircle : faExclamationTriangle} 
                     className={`mr-2 ${
                       messageType === 'success' ? 'text-green-500' : 
-                      messageType === 'error' ? 'text-red-500' : 'text-orange-500'
+                      messageType === 'error' ? 'text-red-500' : 'text-blue-500'
                     }`} 
                   />
                   <span>{message}</span>
@@ -450,7 +512,7 @@ const UserLogin = () => {
             </button>
           </form>
 
-          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="mt-6 p-4 bg-orange-50 border border-orange-200 rounded-lg">
             <div className="flex items-start">
               <FontAwesomeIcon icon={faExclamationTriangle} className="text-orange-500 mt-1 mr-3 flex-shrink-0" />
               <div>
@@ -485,7 +547,7 @@ const UserLogin = () => {
             <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
               <FontAwesomeIcon icon={faKey} className="text-white text-2xl" />
             </div>
-            <h1 className="text-3xl font-bold text-gray-800">Create New Password</h1>
+            <h2 className="text-3xl font-bold text-gray-800">Create New Password</h2>
             <p className="text-gray-600 mt-2">
               Enter your new password below
             </p>
@@ -508,14 +570,14 @@ const UserLogin = () => {
                   required
                   minLength="6"
                   className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${
-                    formErrors.newPassword ? 'border-red-300' : 'border-gray-300'
+                    formErrors.newPassword ? 'border-red-300 bg-red-50' : 'border-gray-300'
                   }`}
                   aria-describedby={formErrors.newPassword ? "newPassword-error" : undefined}
                 />
               </div>
               {formErrors.newPassword && (
                 <p id="newPassword-error" className="text-red-500 text-sm mt-1 flex items-center">
-                  <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1" />
+                  <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1 text-xs" />
                   {formErrors.newPassword}
                 </p>
               )}
@@ -536,37 +598,33 @@ const UserLogin = () => {
                   required
                   minLength="6"
                   className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${
-                    formErrors.confirmPassword ? 'border-red-300' : 'border-gray-300'
+                    formErrors.confirmPassword ? 'border-red-300 bg-red-50' : 'border-gray-300'
                   }`}
                   aria-describedby={formErrors.confirmPassword ? "confirmPassword-error" : undefined}
                 />
               </div>
               {formErrors.confirmPassword && (
                 <p id="confirmPassword-error" className="text-red-500 text-sm mt-1 flex items-center">
-                  <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1" />
+                  <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1 text-xs" />
                   {formErrors.confirmPassword}
                 </p>
               )}
             </div>
 
             {message && (
-              <div 
-                className={`p-4 rounded-lg border ${
-                  messageType === 'success' 
-                    ? 'bg-green-50 border-green-200 text-green-800' 
-                    : messageType === 'error'
-                    ? 'bg-red-50 border-red-200 text-red-800'
-                    : 'bg-blue-50 border-blue-200 text-orange-800'
-                }`}
-                role="alert"
-                aria-live="polite"
-              >
+              <div className={`p-4 rounded-lg border ${
+                messageType === 'success' 
+                  ? 'bg-green-50 border-green-200 text-green-800' 
+                  : messageType === 'error'
+                  ? 'bg-red-50 border-red-200 text-red-800'
+                  : 'bg-blue-50 border-blue-200 text-blue-800'
+              }`}>
                 <div className="flex items-center">
                   <FontAwesomeIcon 
                     icon={messageType === 'success' ? faCheckCircle : faExclamationTriangle} 
                     className={`mr-2 ${
                       messageType === 'success' ? 'text-green-500' : 
-                      messageType === 'error' ? 'text-red-500' : 'text-orange-500'
+                      messageType === 'error' ? 'text-red-500' : 'text-blue-500'
                     }`} 
                   />
                   <span>{message}</span>
@@ -615,13 +673,20 @@ const UserLogin = () => {
           <div className="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
             <FontAwesomeIcon icon={faHamburger} className="text-white text-2xl" />
           </div>
-          <h1 className="text-3xl font-bold text-gray-800">
+          <h2 className="text-3xl font-bold text-gray-800">
             {isLogin ? 'Welcome Back' : 'Create Account'}
-          </h1>
+          </h2>
           <p className="text-gray-600 mt-2">
             {isLogin ? 'Sign in to your account' : 'Join our foodie community'}
           </p>
         </div>
+
+        {/* Debug Info - Remove in production */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mb-4 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
+            <strong>Debug:</strong> API Base URL: {API_BASE_URL}
+          </div>
+        )}
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -642,14 +707,14 @@ const UserLogin = () => {
                   minLength="3"
                   maxLength="20"
                   className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${
-                    formErrors.username ? 'border-red-300' : 'border-gray-300'
+                    formErrors.username ? 'border-red-300 bg-red-50' : 'border-gray-300'
                   }`}
                   aria-describedby={formErrors.username ? "username-error" : undefined}
                 />
               </div>
               {formErrors.username && (
                 <p id="username-error" className="text-red-500 text-sm mt-1 flex items-center">
-                  <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1" />
+                  <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1 text-xs" />
                   {formErrors.username}
                 </p>
               )}
@@ -670,14 +735,14 @@ const UserLogin = () => {
                 onChange={handleInputChange}
                 required
                 className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${
-                  formErrors.email ? 'border-red-300' : 'border-gray-300'
+                  formErrors.email ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
                 aria-describedby={formErrors.email ? "email-error" : undefined}
               />
             </div>
             {formErrors.email && (
               <p id="email-error" className="text-red-500 text-sm mt-1 flex items-center">
-                <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1" />
+                <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1 text-xs" />
                 {formErrors.email}
               </p>
             )}
@@ -698,14 +763,14 @@ const UserLogin = () => {
                 required
                 minLength="6"
                 className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${
-                  formErrors.password ? 'border-red-300' : 'border-gray-300'
+                  formErrors.password ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
                 aria-describedby={formErrors.password ? "password-error" : undefined}
               />
             </div>
             {formErrors.password && (
               <p id="password-error" className="text-red-500 text-sm mt-1 flex items-center">
-                <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1" />
+                <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1 text-xs" />
                 {formErrors.password}
               </p>
             )}
@@ -727,23 +792,19 @@ const UserLogin = () => {
 
           {/* Message */}
           {message && (
-            <div 
-              className={`p-4 rounded-lg border ${
-                messageType === 'success' 
-                  ? 'bg-green-50 border-green-200 text-green-800' 
-                  : messageType === 'error'
-                  ? 'bg-red-50 border-red-200 text-red-800'
-                  : 'bg-blue-50 border-blue-200 text-orange-800'
-              }`}
-              role="alert"
-              aria-live="polite"
-            >
+            <div className={`p-4 rounded-lg border ${
+              messageType === 'success' 
+                ? 'bg-green-50 border-green-200 text-green-800' 
+                : messageType === 'error'
+                ? 'bg-red-50 border-red-200 text-red-800'
+                : 'bg-blue-50 border-blue-200 text-blue-800'
+            }`}>
               <div className="flex items-center">
                 <FontAwesomeIcon 
                   icon={messageType === 'success' ? faCheckCircle : faExclamationTriangle} 
                   className={`mr-2 ${
                     messageType === 'success' ? 'text-green-500' : 
-                    messageType === 'error' ? 'text-red-500' : 'text-orange-500'
+                    messageType === 'error' ? 'text-red-500' : 'text-blue-500'
                   }`} 
                 />
                 <span>{message}</span>
@@ -792,4 +853,4 @@ const UserLogin = () => {
   );
 };
 
-export default UserLogin; 
+export default UserLogin;
