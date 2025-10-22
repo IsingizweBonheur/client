@@ -494,11 +494,18 @@ const UserDashboard = () => {
   const [selectedPayment, setSelectedPayment] = useState('momo');
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // Use API_URL from config instead of hardcoded localhost
-  const API_BASE_URL = API_URL || 'http://localhost:5000/api';
+  // Fixed API URL construction
+  const getApiUrl = (endpoint) => {
+    // Ensure proper URL construction without double slashes
+    const baseUrl = API_URL?.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    return `${baseUrl}${cleanEndpoint}`;
+  };
 
-  // Enhanced fetch function with better error handling
+  // Enhanced fetch function with better error handling and debugging
   const fetchWithAuth = async (url, options = {}) => {
+    const fullUrl = getApiUrl(url);
+    
     const headers = {
       'Content-Type': 'application/json',
       ...options.headers,
@@ -510,19 +517,33 @@ const UserDashboard = () => {
       headers['user-email'] = user.email || '';
     }
 
+    console.log(`Making API request to: ${fullUrl}`);
+    console.log('Headers:', headers);
+
     try {
-      const response = await fetch(`${API_BASE_URL}${url}`, {
+      const response = await fetch(fullUrl, {
         ...options,
         headers,
       });
 
+      console.log(`Response status: ${response.status} ${response.statusText}`);
+
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.error('API Error Response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
       }
 
-      return await response.json();
+      const data = await response.json();
+      console.log('API Success Response:', data);
+      return data;
+
     } catch (error) {
       console.error(`Fetch error for ${url}:`, error);
+      // More specific error messages
+      if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+        throw new Error('Network error: Cannot connect to server. Please check if the server is running.');
+      }
       throw error;
     }
   };
@@ -536,15 +557,13 @@ const UserDashboard = () => {
         throw new Error('User information is missing. Please log in again.');
       }
 
+      console.log('Fetching orders for user:', user.email);
       const data = await fetchWithAuth('/orders/user');
       setOrders(Array.isArray(data) ? data : []);
       
     } catch (error) {
       console.error('Error fetching orders:', error);
-      const errorMessage = error.message.includes('HTTP error') 
-        ? 'Server error. Please try again later.' 
-        : error.message;
-      setError(`Failed to fetch orders: ${errorMessage}`);
+      setError(`Failed to fetch orders: ${error.message}`);
       setOrders([]);
     } finally {
       setLoading(false);
@@ -556,16 +575,34 @@ const UserDashboard = () => {
       setLoading(true);
       setError('');
       
+      console.log('Fetching products...');
       const data = await fetchWithAuth('/products');
       setProducts(Array.isArray(data) ? data : []);
       
     } catch (error) {
       console.error('Error fetching products:', error);
-      const errorMessage = error.message.includes('HTTP error') 
-        ? 'Server error. Please try again later.' 
-        : error.message;
-      setError(`Failed to fetch products: ${errorMessage}`);
+      setError(`Failed to fetch products: ${error.message}`);
       setProducts([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Test API connection
+  const testApiConnection = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(getApiUrl('/health'));
+      if (response.ok) {
+        console.log('API connection test: SUCCESS');
+        return true;
+      } else {
+        console.log('API connection test: FAILED');
+        return false;
+      }
+    } catch (error) {
+      console.error('API connection test: ERROR', error);
+      return false;
     } finally {
       setLoading(false);
     }
@@ -660,6 +697,7 @@ const UserDashboard = () => {
         status: 'pending'
       };
 
+      console.log('Submitting order:', orderData);
       const data = await fetchWithAuth('/orders', {
         method: 'POST',
         body: JSON.stringify(orderData)
@@ -685,15 +723,12 @@ const UserDashboard = () => {
 
     } catch (err) {
       console.error("Checkout error:", err);
-      const errorMessage = err.message.includes('HTTP error') 
-        ? 'Server error. Please try again later.' 
-        : err.message;
-      setError(`Failed to place order: ${errorMessage}`);
-      alert(`Failed to place order: ${errorMessage}`);
+      setError(`Failed to place order: ${err.message}`);
+      alert(`Failed to place order: ${err.message}`);
     } finally {
       setLoading(false);
     }
-  }, [customerInfo, cart, calculateTotal, user, selectedPayment, fetchWithAuth]);
+  }, [customerInfo, cart, calculateTotal, user, selectedPayment]);
 
   const handleProfileUpdate = async (updatedUser) => {
     try {
@@ -777,6 +812,12 @@ const UserDashboard = () => {
     }
   }, [user]);
 
+  // Test API connection on component mount
+  useEffect(() => {
+    console.log('API_URL from config:', API_URL);
+    testApiConnection();
+  }, []);
+
   const cartSummary = useMemo(() => ({
     itemCount: calculateItemCount(),
     total: calculateTotal()
@@ -797,6 +838,11 @@ const UserDashboard = () => {
           <span>Order placed successfully!</span>
         </div>
       )}
+
+      {/* Debug Info - Remove in production */}
+      <div className="fixed bottom-4 right-4 bg-blue-500 text-white p-2 rounded text-xs opacity-70">
+        API: {API_URL ? 'Configured' : 'Missing'}
+      </div>
 
       {/* Enhanced Header */}
       <header className="bg-white shadow-2xl border-b border-gray-200 sticky top-0 z-40 backdrop-blur-sm bg-white/95">
@@ -976,6 +1022,26 @@ const UserDashboard = () => {
           </div>
         )}
 
+        {/* Connection Troubleshooting */}
+        {error && error.includes('Network error') && (
+          <div className="mb-6 bg-yellow-100 border border-yellow-400 text-yellow-700 px-6 py-4 rounded-xl">
+            <h4 className="font-bold mb-2">Connection Issue Detected</h4>
+            <p className="mb-2">Please check:</p>
+            <ul className="list-disc list-inside text-sm space-y-1">
+              <li>Is your backend server running?</li>
+              <li>Check if API_URL is correctly configured</li>
+              <li>Verify CORS settings on the server</li>
+              <li>Check browser console for detailed errors</li>
+            </ul>
+            <button 
+              onClick={testApiConnection}
+              className="mt-3 bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded text-sm"
+            >
+              Test Connection
+            </button>
+          </div>
+        )}
+
         {/* Enhanced Menu Tab */}
         {activeTab === 'menu' && (
           <div className="space-y-8 sm:space-y-12">
@@ -996,14 +1062,26 @@ const UserDashboard = () => {
             ) : products.length === 0 ? (
               <div className="text-center py-16 sm:py-24 bg-white rounded-2xl border border-gray-200 shadow-lg">
                 <FontAwesomeIcon icon={faBox} className="text-6xl sm:text-7xl text-gray-300 mb-6" />
-                <h4 className="text-2xl sm:text-3xl font-semibold text-gray-600 mb-4">No products available</h4>
-                <p className="text-gray-500 text-lg sm:text-xl mb-8">Please check back later or contact support.</p>
-                <button 
-                  onClick={fetchProducts}
-                  className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white px-8 py-4 rounded-xl transition-all duration-300 text-lg w-full sm:w-auto shadow-lg hover:shadow-xl transform hover:scale-105"
-                >
-                  Retry Loading Products
-                </button>
+                <h4 className="text-2xl sm:text-3xl font-semibold text-gray-600 mb-4">
+                  {error ? 'Failed to load products' : 'No products available'}
+                </h4>
+                <p className="text-gray-500 text-lg sm:text-xl mb-8">
+                  {error ? 'Please check your connection and try again' : 'Please check back later or contact support.'}
+                </p>
+                <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                  <button 
+                    onClick={fetchProducts}
+                    className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white px-8 py-4 rounded-xl transition-all duration-300 text-lg shadow-lg hover:shadow-xl transform hover:scale-105"
+                  >
+                    Retry Loading Products
+                  </button>
+                  <button 
+                    onClick={testApiConnection}
+                    className="bg-gray-500 hover:bg-gray-600 text-white px-8 py-4 rounded-xl transition-all duration-300 text-lg shadow-lg hover:shadow-xl transform hover:scale-105"
+                  >
+                    Test Connection
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 sm:gap-8">
@@ -1047,14 +1125,28 @@ const UserDashboard = () => {
             ) : orders.length === 0 ? (
               <div className="text-center py-16 sm:py-24 bg-white rounded-2xl border border-gray-200 shadow-lg">
                 <FontAwesomeIcon icon={faBox} className="text-6xl sm:text-7xl text-gray-300 mb-6" />
-                <h4 className="text-2xl sm:text-3xl font-semibold text-gray-600 mb-4">No orders yet</h4>
-                <p className="text-gray-500 text-lg sm:text-xl mb-8">Start shopping to see your orders here!</p>
-                <button 
-                  onClick={() => setActiveTab('menu')}
-                  className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white px-8 py-4 rounded-xl transition-all duration-300 text-lg w-full sm:w-auto shadow-lg hover:shadow-xl transform hover:scale-105"
-                >
-                  Browse Menu
-                </button>
+                <h4 className="text-2xl sm:text-3xl font-semibold text-gray-600 mb-4">
+                  {error ? 'Failed to load orders' : 'No orders yet'}
+                </h4>
+                <p className="text-gray-500 text-lg sm:text-xl mb-8">
+                  {error ? 'Please check your connection and try again' : 'Start shopping to see your orders here!'}
+                </p>
+                <div className="flex flex-col sm:flex-row gap-4 justify-center">
+                  {!error && (
+                    <button 
+                      onClick={() => setActiveTab('menu')}
+                      className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white px-8 py-4 rounded-xl transition-all duration-300 text-lg shadow-lg hover:shadow-xl transform hover:scale-105"
+                    >
+                      Browse Menu
+                    </button>
+                  )}
+                  <button 
+                    onClick={fetchUserOrders}
+                    className="bg-gray-500 hover:bg-gray-600 text-white px-8 py-4 rounded-xl transition-all duration-300 text-lg shadow-lg hover:shadow-xl transform hover:scale-105"
+                  >
+                    Retry Loading Orders
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-6 sm:space-y-8">
