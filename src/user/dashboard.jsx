@@ -1267,7 +1267,7 @@ const UserDashboard = () => {
                             <p><strong>Name:</strong> {order.customer_name}</p>
                             <p><strong>Phone:</strong> {order.customer_phone}</p>
                             <p><strong>Address:</strong> {order.customer_address}</p>
-                            <p><strong>Payment:</strong> <span className="capitalize">{order.payment_method}</span></p>
+                            <p><strong>Payment:</strong> <span className="capitalize"> {formatPrice(order.total)}</span></p>
                           </div>
                         </div>
                       </div>
