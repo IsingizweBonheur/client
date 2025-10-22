@@ -11,17 +11,20 @@ import {
 const useUser = () => {
   const [user, setUser] = useState(() => {
     const saved = localStorage.getItem('user');
-    return saved ? JSON.parse(saved) : null;
+    const savedSession = localStorage.getItem('session');
+    return saved && savedSession ? JSON.parse(saved) : null;
   });
 
-  const login = (userData) => {
+  const login = (userData, sessionData) => {
     setUser(userData);
     localStorage.setItem('user', JSON.stringify(userData));
+    localStorage.setItem('session', JSON.stringify(sessionData));
   };
 
   const logout = () => {
     setUser(null);
     localStorage.removeItem('user');
+    localStorage.removeItem('session');
   };
 
   return { user, login, logout };
@@ -32,6 +35,7 @@ const UserLogin = () => {
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
   const [resetToken, setResetToken] = useState('');
+  const [resetEmail, setResetEmail] = useState('');
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -44,7 +48,7 @@ const UserLogin = () => {
   const [messageType, setMessageType] = useState(''); // 'success', 'error', 'info'
   const { login } = useUser();
 
- const API_BASE_URL = API_URL;
+  const API_BASE_URL = API_URL;
 
   const handleInputChange = (e) => {
     setFormData({
@@ -69,10 +73,12 @@ const UserLogin = () => {
         return;
       }
 
-      const endpoint = isLogin ? '/auth/login' : '/auth/register';
+      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
       const payload = isLogin 
         ? { email: formData.email, password: formData.password }
         : { username: formData.username, email: formData.email, password: formData.password };
+
+      console.log('Making request to:', `${API_BASE_URL}${endpoint}`);
 
       const response = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
@@ -91,8 +97,12 @@ const UserLogin = () => {
       showMessage(data.message, 'success');
 
       if (isLogin) {
-        // Store user data and redirect
-        login(data.user);
+        // Store user data and session tokens
+        login(data.user, data.session);
+        
+        // Set authorization header for future requests
+        localStorage.setItem('auth_token', data.session.access_token);
+        
         setTimeout(() => {
           window.location.href = '/userdashboard';
         }, 1000);
@@ -104,6 +114,7 @@ const UserLogin = () => {
       }
 
     } catch (error) {
+      console.error('Auth error:', error);
       showMessage(error.message, 'error');
     } finally {
       setLoading(false);
@@ -117,10 +128,38 @@ const UserLogin = () => {
     }
 
     setLoading(true);
-    showMessage('Sending password reset link...', 'info');
+    showMessage('Checking email...', 'info');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+      // First check if email exists
+      const checkResponse = await fetch(`${API_BASE_URL}/api/auth/check-email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email: formData.email }),
+      });
+
+      const checkData = await checkResponse.json();
+
+      if (!checkResponse.ok) {
+        throw new Error(checkData.message || 'Failed to check email');
+      }
+
+      if (!checkData.exists) {
+        // For security, show success message even if email doesn't exist
+        showMessage('If an account with that email exists, a password reset link has been sent', 'success');
+        setFormData({ ...formData, email: '' });
+        setTimeout(() => {
+          setShowForgotPassword(false);
+        }, 3000);
+        return;
+      }
+
+      // Email exists, proceed with forgot password
+      showMessage('Sending password reset link...', 'info');
+
+      const response = await fetch(`${API_BASE_URL}/api/auth/forgot-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -134,7 +173,8 @@ const UserLogin = () => {
         throw new Error(data.message || 'Failed to send reset email');
       }
 
-      showMessage('✅ Password reset link has been sent to your email! Check your inbox and spam folder.', 'success');
+      showMessage('✅ If an account with that email exists, a password reset link has been sent!', 'success');
+      setResetEmail(formData.email);
       setFormData({ ...formData, email: '' });
       
       // Auto-show reset form in demo mode if token is provided
@@ -163,6 +203,28 @@ const UserLogin = () => {
     }
   };
 
+  const validateResetToken = async (token) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/auth/validate-reset-token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.valid) {
+        throw new Error(data.message || 'Invalid reset token');
+      }
+
+      return data;
+    } catch (error) {
+      throw new Error('Failed to validate reset token');
+    }
+  };
+
   const handleResetPassword = async () => {
     if (formData.newPassword !== formData.confirmPassword) {
       showMessage('Passwords do not match', 'error');
@@ -175,17 +237,26 @@ const UserLogin = () => {
     }
 
     setLoading(true);
-    showMessage('Resetting your password...', 'info');
+    showMessage('Validating token and resetting password...', 'info');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+      // Validate token first
+      const tokenValidation = await validateResetToken(resetToken);
+      
+      if (!tokenValidation.valid) {
+        throw new Error('Invalid or expired reset token');
+      }
+
+      // Proceed with password reset
+      const response = await fetch(`${API_BASE_URL}/api/auth/reset-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           token: resetToken,
-          newPassword: formData.newPassword
+          newPassword: formData.newPassword,
+          email: resetEmail
         }),
       });
 
@@ -203,6 +274,7 @@ const UserLogin = () => {
         setIsLogin(true);
         setFormData({ username: '', email: '', password: '', newPassword: '', confirmPassword: '' });
         setResetToken('');
+        setResetEmail('');
         showMessage('You can now login with your new password', 'success');
       }, 3000);
 
@@ -221,6 +293,8 @@ const UserLogin = () => {
     setShowForgotPassword(false);
     setShowResetPassword(false);
     setFormData({ username: '', email: '', password: '', newPassword: '', confirmPassword: '' });
+    setResetToken('');
+    setResetEmail('');
     setMessage('');
   };
 
@@ -312,7 +386,7 @@ const UserLogin = () => {
               <div>
                 <p className="text-sm text-orange-800 font-medium">Check your email</p>
                 <p className="text-xs text-orange-700 mt-1">
-                  The password reset link will be sent to your email inbox. Don't forget to check your spam folder if you don't see it.
+                  If an account with this email exists, you'll receive a password reset link. Check your spam folder if you don't see it.
                 </p>
               </div>
             </div>
@@ -344,6 +418,11 @@ const UserLogin = () => {
             <p className="text-gray-600 mt-2">
               Enter your new password below
             </p>
+            {resetEmail && (
+              <p className="text-sm text-gray-500 mt-1">
+                For: {resetEmail}
+              </p>
+            )}
           </div>
 
           {/* Reset Password Form */}
