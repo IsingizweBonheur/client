@@ -3,7 +3,7 @@ import { API_URL } from "../config";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faUser, faHistory, faBox, faEdit, faSignOutAlt,
-  faSpinner, faCheckCircle, faTimesCircle,
+  faSpinner, faCheckCircle, faTimesCircle, faCheck,
   faShoppingCart, faDollarSign, faCalendarAlt,
   faPlus, faMinus, faTrash, faCreditCard, faPhone,
   faEnvelope, faMapMarkerAlt, faHamburger, faSearch,
@@ -29,6 +29,7 @@ const useUser = () => {
   const logout = () => {
     setUser(null);
     localStorage.removeItem('user');
+    localStorage.removeItem('token');
   };
 
   return { user, login, logout };
@@ -48,7 +49,7 @@ const ProductImage = React.memo(({ product, className = "h-40 sm:h-48 w-full obj
     default: "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=300&h=200&fit=crop"
   };
 
- const BACKEND_URL = API_URL;
+  const BACKEND_URL = API_URL;
 
   const getImageUrl = useCallback((imageUrl) => {
     if (!imageUrl) return null;
@@ -63,7 +64,7 @@ const ProductImage = React.memo(({ product, className = "h-40 sm:h-48 w-full obj
     }
     
     return `${BACKEND_URL}${imageUrl.startsWith('/') ? imageUrl : '/' + imageUrl}?t=${Date.now()}`;
-  }, []);
+  }, [BACKEND_URL]);
 
   const getFallbackImage = useCallback((productName) => {
     const name = productName?.toLowerCase() || '';
@@ -113,7 +114,7 @@ const ProductCard = React.memo(({ product, onAddToCart }) => {
     return new Intl.NumberFormat("rw-RW", { 
       style: "currency", 
       currency: "RWF" 
-    }).format(price);
+    }).format(price || 0);
   }, []);
 
   return (
@@ -140,10 +141,15 @@ const ProductCard = React.memo(({ product, onAddToCart }) => {
           </p>
           <button 
             onClick={handleAddToCart}
-            className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white px-4 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl transition-all duration-300 flex items-center space-x-2 text-sm sm:text-base font-semibold shadow-lg hover:shadow-xl transform hover:scale-105"
+            disabled={!product.is_available}
+            className={`px-4 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl transition-all duration-300 flex items-center space-x-2 text-sm sm:text-base font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 ${
+              product.is_available 
+                ? 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white' 
+                : 'bg-gray-400 text-gray-200 cursor-not-allowed'
+            }`}
           >
             <FontAwesomeIcon icon={faPlus} className="text-sm" />
-            <span>Add to Cart</span>
+            <span>{product.is_available ? 'Add to Cart' : 'Out of Stock'}</span>
           </button>
         </div>
       </div>
@@ -169,7 +175,7 @@ const CartItem = React.memo(({ item, onUpdateQuantity, onRemove }) => {
     return new Intl.NumberFormat("rw-RW", { 
       style: "currency", 
       currency: "RWF" 
-    }).format(price);
+    }).format(price || 0);
   }, []);
 
   return (
@@ -207,7 +213,7 @@ const CartItem = React.memo(({ item, onUpdateQuantity, onRemove }) => {
       </div>
       <div className="text-right flex-shrink-0">
         <p className="font-bold text-gray-800 text-base sm:text-lg">
-          {formatPrice(item.total_amount * item.quantity)}
+          {formatPrice((item.total_amount || 0) * item.quantity)}
         </p>
       </div>
     </div>
@@ -254,7 +260,7 @@ const OrderTracking = React.memo(({ order, onClose }) => {
                 <div key={index} className="flex justify-between items-center bg-gray-50 p-4 rounded-lg border border-gray-200">
                   <span className="text-gray-700 text-sm sm:text-base">{item.product_name} x {item.quantity}</span>
                   <span className="font-semibold text-green-600 text-sm sm:text-base">
-                    {new Intl.NumberFormat("rw-RW", { style: "currency", currency: "RWF" }).format((item.total_amount || item.price) * item.quantity)}
+                    {new Intl.NumberFormat("rw-RW", { style: "currency", currency: "RWF" }).format((item.total_amount || item.price || 0) * item.quantity)}
                   </span>
                 </div>
               ))}
@@ -262,7 +268,7 @@ const OrderTracking = React.memo(({ order, onClose }) => {
                 <div className="flex justify-between items-center font-bold text-lg">
                   <span>Total</span>
                   <span className="text-green-600">
-                    {new Intl.NumberFormat("rw-RW", { style: "currency", currency: "RWF" }).format(order.total)}
+                    {new Intl.NumberFormat("rw-RW", { style: "currency", currency: "RWF" }).format(order.total || 0)}
                   </span>
                 </div>
               </div>
@@ -488,30 +494,58 @@ const UserDashboard = () => {
   const [selectedPayment, setSelectedPayment] = useState('momo');
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  const API_BASE_URL = 'http://localhost:5000/api';
+  // Use API_URL from config instead of hardcoded localhost
+  const API_BASE_URL = API_URL || 'http://localhost:5000/api';
 
-  const fetchUserOrders = async () => {
+  // Enhanced fetch function with better error handling
+  const fetchWithAuth = async (url, options = {}) => {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+
+    // Add user authentication headers if user exists
+    if (user) {
+      headers['user-id'] = user.id?.toString() || '';
+      headers['user-email'] = user.email || '';
+    }
+
     try {
-      setLoading(true);
-      setError('');
-      const response = await fetch(`${API_BASE_URL}/orders/user`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'user-id': user.id.toString(),
-          'user-email': user.email,
-        },
+      const response = await fetch(`${API_BASE_URL}${url}`, {
+        ...options,
+        headers,
       });
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
+
+      return await response.json();
+    } catch (error) {
+      console.error(`Fetch error for ${url}:`, error);
+      throw error;
+    }
+  };
+
+  const fetchUserOrders = async () => {
+    try {
+      setLoading(true);
+      setError('');
       
-      const data = await response.json();
-      setOrders(data);
+      if (!user || !user.id || !user.email) {
+        throw new Error('User information is missing. Please log in again.');
+      }
+
+      const data = await fetchWithAuth('/orders/user');
+      setOrders(Array.isArray(data) ? data : []);
+      
     } catch (error) {
       console.error('Error fetching orders:', error);
-      setError('Failed to fetch orders');
+      const errorMessage = error.message.includes('HTTP error') 
+        ? 'Server error. Please try again later.' 
+        : error.message;
+      setError(`Failed to fetch orders: ${errorMessage}`);
+      setOrders([]);
     } finally {
       setLoading(false);
     }
@@ -521,20 +555,28 @@ const UserDashboard = () => {
     try {
       setLoading(true);
       setError('');
-      const response = await fetch(`${API_BASE_URL}/products`);
       
-      if (!response.ok) throw new Error('Failed to fetch products');
+      const data = await fetchWithAuth('/products');
+      setProducts(Array.isArray(data) ? data : []);
       
-      const data = await response.json();
-      setProducts(data);
     } catch (error) {
-      setError(error.message);
+      console.error('Error fetching products:', error);
+      const errorMessage = error.message.includes('HTTP error') 
+        ? 'Server error. Please try again later.' 
+        : error.message;
+      setError(`Failed to fetch products: ${errorMessage}`);
+      setProducts([]);
     } finally {
       setLoading(false);
     }
   };
 
   const addToCart = useCallback((product) => {
+    if (!product.is_available) {
+      alert('This product is currently out of stock');
+      return;
+    }
+    
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
       if (existing) {
@@ -548,7 +590,7 @@ const UserDashboard = () => {
         ...product, 
         quantity: 1, 
         id: product.id,
-        total_amount: product.total_amount
+        total_amount: product.total_amount || 0
       }];
     });
     setShowCart(true);
@@ -571,7 +613,7 @@ const UserDashboard = () => {
   }, [removeFromCart]);
 
   const calculateTotal = useCallback(() => {
-    return cart.reduce((total, item) => total + (item.total_amount * item.quantity), 0);
+    return cart.reduce((total, item) => total + ((item.total_amount || 0) * item.quantity), 0);
   }, [cart]);
 
   const calculateItemCount = useCallback(() => {
@@ -580,8 +622,10 @@ const UserDashboard = () => {
 
   const handleCheckout = useCallback(async (e) => {
     e.preventDefault();
-    if (!customerInfo.name || !customerInfo.phone || !customerInfo.address) {
-      alert("Please fill in all required fields");
+    
+    // Validation
+    if (!customerInfo.name?.trim() || !customerInfo.phone?.trim() || !customerInfo.address?.trim()) {
+      alert("Please fill in all required fields (name, phone, and address)");
       return;
     }
 
@@ -590,33 +634,38 @@ const UserDashboard = () => {
       return;
     }
 
+    if (!user?.email) {
+      alert("User information is missing. Please log in again.");
+      return;
+    }
+
     setLoading(true);
     setError('');
     
     try {
       const orderData = {
-        customer_name: customerInfo.name,
-        customer_phone: customerInfo.phone,
-        customer_address: customerInfo.address,
+        customer_name: customerInfo.name.trim(),
+        customer_phone: customerInfo.phone.trim(),
+        customer_address: customerInfo.address.trim(),
         customer_email: user.email,
-        cart: cart,
+        cart: cart.map(item => ({
+          id: item.id,
+          product_name: item.product_name,
+          quantity: item.quantity,
+          price: item.total_amount || 0,
+          total_amount: item.total_amount || 0
+        })),
         total: calculateTotal(),
         payment_method: selectedPayment,
-        payment_status: selectedPayment === 'cash' ? 'pending' : 'paid'
+        status: 'pending'
       };
 
-      const res = await fetch(`${API_BASE_URL}/orders`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const data = await fetchWithAuth('/orders', {
+        method: 'POST',
         body: JSON.stringify(orderData)
       });
 
-      const data = await res.json();
-      
-      if (!res.ok) {
-        throw new Error(data.message || `HTTP error! status: ${res.status}`);
-      }
-
+      // Success handling
       if (selectedPayment === 'momo') {
         alert(`Order placed successfully!\n\nPayment Instructions:\nSend ${formatPrice(calculateTotal())} to MoMo: 0788295765\nAccount: TUYISENGE Gashugi Arnaud\nUse your name as reference`);
       } else {
@@ -627,6 +676,7 @@ const UserDashboard = () => {
       setCart([]);
       setShowCheckout(false);
       
+      // Refresh orders after successful order
       setTimeout(() => {
         fetchUserOrders();
       }, 1000);
@@ -635,12 +685,15 @@ const UserDashboard = () => {
 
     } catch (err) {
       console.error("Checkout error:", err);
-      setError(err.message);
-      alert(`Failed to place order: ${err.message}`);
+      const errorMessage = err.message.includes('HTTP error') 
+        ? 'Server error. Please try again later.' 
+        : err.message;
+      setError(`Failed to place order: ${errorMessage}`);
+      alert(`Failed to place order: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
-  }, [customerInfo, cart, calculateTotal, user, selectedPayment]);
+  }, [customerInfo, cart, calculateTotal, user, selectedPayment, fetchWithAuth]);
 
   const handleProfileUpdate = async (updatedUser) => {
     try {
@@ -665,7 +718,7 @@ const UserDashboard = () => {
     return new Intl.NumberFormat("rw-RW", { 
       style: "currency", 
       currency: "RWF" 
-    }).format(price);
+    }).format(price || 0);
   }, []);
 
   const formatDate = (dateString) => {
@@ -684,7 +737,8 @@ const UserDashboard = () => {
   };
 
   const getStatusColor = (status) => {
-    switch (status?.toLowerCase()) {
+    const statusLower = status?.toLowerCase() || 'pending';
+    switch (statusLower) {
       case 'completed': return 'bg-green-100 text-green-800';
       case 'preparing': return 'bg-orange-100 text-orange-800';
       case 'on the way': return 'bg-amber-100 text-amber-800';
@@ -702,6 +756,7 @@ const UserDashboard = () => {
     setTrackingOrder(null);
   }, []);
 
+  // Effect to fetch data when tabs change
   useEffect(() => {
     if (activeTab === 'orders') {
       fetchUserOrders();
@@ -710,6 +765,7 @@ const UserDashboard = () => {
     }
   }, [activeTab]);
 
+  // Effect to update customer info when user changes
   useEffect(() => {
     if (user) {
       setCustomerInfo({
@@ -726,6 +782,7 @@ const UserDashboard = () => {
     total: calculateTotal()
   }), [calculateItemCount, calculateTotal]);
 
+  // Redirect if no user
   if (!user) {
     window.location.href = '/userlogin';
     return null;
@@ -936,6 +993,18 @@ const UserDashboard = () => {
                 <FontAwesomeIcon icon={faSpinner} className="animate-spin text-5xl sm:text-6xl text-orange-600 mb-6" />
                 <p className="text-gray-600 text-xl sm:text-2xl">Loading menu...</p>
               </div>
+            ) : products.length === 0 ? (
+              <div className="text-center py-16 sm:py-24 bg-white rounded-2xl border border-gray-200 shadow-lg">
+                <FontAwesomeIcon icon={faBox} className="text-6xl sm:text-7xl text-gray-300 mb-6" />
+                <h4 className="text-2xl sm:text-3xl font-semibold text-gray-600 mb-4">No products available</h4>
+                <p className="text-gray-500 text-lg sm:text-xl mb-8">Please check back later or contact support.</p>
+                <button 
+                  onClick={fetchProducts}
+                  className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white px-8 py-4 rounded-xl transition-all duration-300 text-lg w-full sm:w-auto shadow-lg hover:shadow-xl transform hover:scale-105"
+                >
+                  Retry Loading Products
+                </button>
+              </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 sm:gap-8">
                 {products.map((product) => (
@@ -1027,7 +1096,7 @@ const UserDashboard = () => {
                                   <p className="text-gray-600 text-sm">Qty: {item.quantity}</p>
                                 </div>
                                 <span className="font-bold text-green-600 text-base">
-                                  {formatPrice((item.total_amount || item.price) * item.quantity)}
+                                  {formatPrice((item.total_amount || item.price || 0) * item.quantity)}
                                 </span>
                               </div>
                             ))}
@@ -1249,7 +1318,7 @@ const UserDashboard = () => {
                           </div>
                         </div>
                         <span className="font-bold text-green-600 text-base whitespace-nowrap ml-4">
-                          {formatPrice(item.total_amount * item.quantity)}
+                          {formatPrice((item.total_amount || 0) * item.quantity)}
                         </span>
                       </div>
                     ))}
