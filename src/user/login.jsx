@@ -5,8 +5,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faUser, faEnvelope, faLock, faSignInAlt, 
   faUserPlus, faSpinner, faHamburger,
-  faCheckCircle, faExclamationTriangle,
-  faWifi, faServer
+  faCheckCircle, faExclamationTriangle
 } from '@fortawesome/free-solid-svg-icons';
 
 const UserLogin = ({ onLogin }) => {
@@ -20,42 +19,6 @@ const UserLogin = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
-
-  // Test backend connection directly
-  const testBackendConnection = async () => {
-    try {
-      console.log('🔍 Testing connection to:', API_URL);
-      
-      const response = await fetch(`${API_URL}/api/health`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      console.log('📡 Response status:', response.status);
-      console.log('📡 Response ok:', response.ok);
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Backend is working:', data);
-        return { success: true, data };
-      } else {
-        const errorText = await response.text();
-        console.log('❌ Backend error:', errorText);
-        return { 
-          success: false, 
-          error: `Server returned status: ${response.status} - ${errorText}` 
-        };
-      }
-    } catch (error) {
-      console.error('💥 Connection failed:', error);
-      return { 
-        success: false, 
-        error: error.message 
-      };
-    }
-  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -71,21 +34,17 @@ const UserLogin = ({ onLogin }) => {
       return;
     }
 
+    if (!isLogin && !formData.username) {
+      setMessage('Username is required for registration');
+      setMessageType('error');
+      return;
+    }
+
     setLoading(true);
-    setMessage('Testing connection to server...');
+    setMessage('Connecting to server...');
     setMessageType('info');
 
     try {
-      // Step 1: Test connection first
-      const connectionTest = await testBackendConnection();
-      
-      if (!connectionTest.success) {
-        throw new Error(`Cannot connect to backend: ${connectionTest.error}`);
-      }
-
-      setMessage('Connection successful! Attempting login...');
-      
-      // Step 2: Attempt login
       const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
       const url = `${API_URL}${endpoint}`;
       
@@ -100,9 +59,8 @@ const UserLogin = ({ onLogin }) => {
             password: formData.password 
           };
 
-      console.log('🚀 Making request to:', url);
-      console.log('📦 Payload:', { ...payload, password: '***' });
-
+      console.log('🔄 Making request to:', url);
+      
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -111,65 +69,56 @@ const UserLogin = ({ onLogin }) => {
         body: JSON.stringify(payload),
       });
 
-      console.log('📨 Response status:', response.status);
-      console.log('📨 Response headers:', response.headers);
+      console.log('📡 Response status:', response.status);
 
-      const responseText = await response.text();
-      console.log('📨 Response text:', responseText);
-
-      let data;
-      try {
-        data = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error('❌ Failed to parse JSON:', parseError);
-        throw new Error(`Server returned invalid JSON: ${responseText}`);
-      }
+      const data = await response.json();
+      console.log('📡 Response data:', data);
 
       if (!response.ok) {
-        throw new Error(data.message || `Login failed with status ${response.status}`);
+        throw new Error(data.message || `Request failed with status ${response.status}`);
       }
 
-      console.log('✅ Login success:', data);
-
-      if (isLogin && data.user) {
-        localStorage.setItem('user', JSON.stringify(data.user));
-        setMessage('✅ Login successful! Redirecting...');
-        setMessageType('success');
-        
-        setTimeout(() => {
-          onLogin(data.user);
-        }, 1000);
-      } else if (!isLogin) {
-        setMessage('✅ Account created! Please login.');
+      if (isLogin) {
+        if (data.user) {
+          localStorage.setItem('user', JSON.stringify(data.user));
+          setMessage('✅ Login successful! Redirecting...');
+          setMessageType('success');
+          
+          setTimeout(() => {
+            onLogin(data.user);
+          }, 1000);
+        } else {
+          throw new Error('No user data received from server');
+        }
+      } else {
+        setMessage('✅ Account created successfully! Please login.');
         setMessageType('success');
         setIsLogin(true);
         setFormData({ username: '', email: '', password: '' });
-      } else {
-        throw new Error('No user data received');
       }
 
     } catch (error) {
-      console.error('💥 Authentication failed:', error);
+      console.error('❌ Authentication error:', error);
       
       let errorMessage = error.message;
       
       if (error.message.includes('Failed to fetch') || 
           error.message.includes('NetworkError') ||
           error.message.includes('Load failed')) {
-        errorMessage = `🌐 Network Connection Failed
+        errorMessage = `🌐 Connection Error
 
-Cannot connect to: ${API_URL}
+Cannot connect to server at:
+${API_URL}
 
-Possible reasons:
-• Backend server is sleeping on Render
-• Backend server is not running
+Possible issues:
+• Backend server is sleeping (Render free tier)
 • CORS configuration issue
-• Network firewall blocking the connection
+• Network connectivity problem
 
 Please:
-1. Wait 30-60 seconds for Render to wake up the server
+1. Wait 30-60 seconds for server to wake up
 2. Refresh and try again
-3. Check if backend is deployed correctly on Render`;
+3. Check if backend is deployed correctly`;
       }
       
       setMessage(errorMessage);
@@ -191,24 +140,6 @@ Please:
       ...prev,
       [name]: value
     }));
-  };
-
-  // Manual connection test button
-  const handleTestConnection = async () => {
-    setLoading(true);
-    setMessage('Testing connection to server...');
-    
-    const result = await testBackendConnection();
-    
-    if (result.success) {
-      setMessage(`✅ Server is running!\n\nResponse: ${JSON.stringify(result.data)}`);
-      setMessageType('success');
-    } else {
-      setMessage(`❌ Connection failed:\n\n${result.error}`);
-      setMessageType('error');
-    }
-    
-    setLoading(false);
   };
 
   return (
@@ -239,7 +170,7 @@ Please:
                 <input
                   type="text"
                   name="username"
-                  placeholder="Username"
+                  placeholder="Username (3-20 characters)"
                   value={formData.username}
                   onChange={handleInputChange}
                   className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
@@ -268,7 +199,7 @@ Please:
               <input
                 type="password"
                 name="password"
-                placeholder="Password"
+                placeholder="Password (min. 6 characters)"
                 value={formData.password}
                 onChange={handleInputChange}
                 className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
@@ -281,9 +212,7 @@ Please:
             <div className={`p-4 rounded-lg border text-sm whitespace-pre-line ${
               messageType === 'success' 
                 ? 'bg-green-50 border-green-200 text-green-800' 
-                : messageType === 'error'
-                ? 'bg-red-50 border-red-200 text-red-800'
-                : 'bg-blue-50 border-blue-200 text-blue-800'
+                : 'bg-red-50 border-red-200 text-red-800'
             }`}>
               <div className="flex items-start">
                 <FontAwesomeIcon 
@@ -306,7 +235,7 @@ Please:
             {loading ? (
               <>
                 <FontAwesomeIcon icon={faSpinner} className="animate-spin mr-2" />
-                {isLogin ? 'Connecting...' : 'Creating...'}
+                {isLogin ? 'Signing In...' : 'Creating Account...'}
               </>
             ) : (
               <>
@@ -316,16 +245,6 @@ Please:
             )}
           </button>
         </form>
-
-        {/* Test Connection Button */}
-        <button
-          onClick={handleTestConnection}
-          disabled={loading}
-          className="w-full mt-4 bg-gray-500 hover:bg-gray-600 disabled:bg-gray-300 text-white py-2 px-4 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center"
-        >
-          <FontAwesomeIcon icon={faWifi} className="mr-2" />
-          Test Server Connection
-        </button>
 
         {/* Toggle between Login/Signup */}
         <div className="text-center mt-6">
@@ -338,18 +257,15 @@ Please:
           </button>
         </div>
 
-        {/* Troubleshooting Info */}
-        <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <h4 className="font-bold text-yellow-800 mb-2 flex items-center">
-            <FontAwesomeIcon icon={faServer} className="mr-2" />
-            Troubleshooting
-          </h4>
-          <ul className="text-sm text-yellow-700 list-disc list-inside space-y-1">
-            <li>Render free tier servers sleep after inactivity</li>
-            <li>First request may take 30-60 seconds to wake up</li>
-            <li>Check browser Console for detailed errors</li>
-            <li>Verify backend is deployed on Render</li>
-          </ul>
+        {/* Debug Info */}
+        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <h4 className="font-bold text-blue-800 mb-2">Debug Information</h4>
+          <p className="text-sm text-blue-700">
+            <strong>Backend URL:</strong> {API_URL}<br />
+            <strong>Login Endpoint:</strong> {API_URL}/api/auth/login<br />
+            <strong>Register Endpoint:</strong> {API_URL}/api/auth/register<br />
+            <strong>Health Check:</strong> {API_URL}/api/health
+          </p>
         </div>
       </div>
     </div>
