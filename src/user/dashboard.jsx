@@ -497,17 +497,22 @@ const UserDashboard = () => {
   // Use the Render backend URL directly
   const API_BASE_URL = 'https://backend-wgm2.onrender.com/api';
 
-  // Enhanced fetch function with better error handling
+  // Enhanced fetch function with better error handling and debugging
   const fetchWithAuth = async (url, options = {}) => {
     const headers = {
       'Content-Type': 'application/json',
       ...options.headers,
     };
 
-    // Add user authentication headers if user exists
+    // Add user authentication headers if user exists - FIXED: Match server expectations
     if (user) {
       headers['user-id'] = user.id?.toString() || '';
       headers['user-email'] = user.email || '';
+      
+      console.log('Auth headers set:', {
+        'user-id': user.id,
+        'user-email': user.email
+      });
     }
 
     try {
@@ -522,6 +527,16 @@ const UserDashboard = () => {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Server error response:', errorText);
+        
+        // Handle specific error cases
+        if (response.status === 401) {
+          throw new Error('Authentication failed. Please log in again.');
+        } else if (response.status === 404) {
+          throw new Error('Requested resource not found.');
+        } else if (response.status === 500) {
+          throw new Error('Server error. Please try again later.');
+        }
+        
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
@@ -538,18 +553,40 @@ const UserDashboard = () => {
     }
   };
 
+  // FIXED: Enhanced user orders fetch with better error handling
   const fetchUserOrders = async () => {
     try {
       setLoading(true);
       setError('');
       
       if (!user || !user.id || !user.email) {
+        console.error('User data missing:', { user });
         throw new Error('User information is missing. Please log in again.');
       }
 
-      console.log('Fetching orders for user:', user.email);
+      console.log('Fetching orders for user:', { 
+        email: user.email, 
+        username: user.username,
+        userId: user.id 
+      });
+
       const data = await fetchWithAuth('/orders/user');
-      setOrders(Array.isArray(data) ? data : []);
+      
+      // Handle both array and object responses
+      if (data && typeof data === 'object') {
+        if (Array.isArray(data)) {
+          setOrders(data);
+        } else if (data.message) {
+          // If server returns a message instead of array (no orders)
+          console.log('Server message:', data.message);
+          setOrders([]);
+        } else {
+          // If it's an object but not an array, wrap it in array
+          setOrders([data]);
+        }
+      } else {
+        setOrders([]);
+      }
       
     } catch (error) {
       console.error('Error fetching orders:', error);
@@ -560,36 +597,66 @@ const UserDashboard = () => {
     }
   };
 
+  // FIXED: Enhanced products fetch with fallback
   const fetchProducts = async () => {
     try {
       setLoading(true);
       setError('');
       
       console.log('Fetching products from:', `${API_BASE_URL}/products`);
-      const data = await fetchWithAuth('/products');
+      
+      // Try with auth first
+      let data = await fetchWithAuth('/products');
+      
+      // If no data or error, try direct fetch without auth (since products are public)
+      if (!data || (data.message && !Array.isArray(data))) {
+        console.log('Trying direct fetch for products...');
+        const directResponse = await fetch(`${API_BASE_URL}/products`);
+        if (directResponse.ok) {
+          data = await directResponse.json();
+        }
+      }
+      
       setProducts(Array.isArray(data) ? data : []);
       
     } catch (error) {
       console.error('Error fetching products:', error);
       setError(`Failed to fetch products: ${error.message}`);
       setProducts([]);
+      
+      // Final fallback: try direct fetch without any auth
+      try {
+        const fallbackResponse = await fetch(`${API_BASE_URL}/products`);
+        if (fallbackResponse.ok) {
+          const fallbackData = await fallbackResponse.json();
+          setProducts(Array.isArray(fallbackData) ? fallbackData : []);
+        }
+      } catch (fallbackError) {
+        console.error('Fallback also failed:', fallbackError);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  // Test API connection
+  // Enhanced API connection test
   const testApiConnection = async () => {
     try {
       setLoading(true);
+      console.log('Testing API connection to:', API_BASE_URL);
+      
       const response = await fetch(`${API_BASE_URL}/health`);
+      console.log('Health check response status:', response.status);
+      
       if (response.ok) {
         const data = await response.json();
-        console.log('API health check:', data);
+        console.log('API health check success:', data);
         setMessage('API connection successful!');
         return true;
       } else {
-        setError('API health check failed');
+        const errorText = await response.text();
+        console.error('Health check failed with status:', response.status, errorText);
+        setError(`API health check failed: ${response.status}`);
         return false;
       }
     } catch (error) {
@@ -650,6 +717,7 @@ const UserDashboard = () => {
     return cart.reduce((count, item) => count + item.quantity, 0);
   }, [cart]);
 
+  // FIXED: Enhanced checkout with better error handling
   const handleCheckout = useCallback(async (e) => {
     e.preventDefault();
     
@@ -696,6 +764,8 @@ const UserDashboard = () => {
         body: JSON.stringify(orderData)
       });
 
+      console.log('Order response:', data);
+
       // Success handling
       if (selectedPayment === 'momo') {
         alert(`Order placed successfully!\n\nPayment Instructions:\nSend ${formatPrice(calculateTotal())} to MoMo: 0788295765\nAccount: TUYISENGE Gashugi Arnaud\nUse your name as reference`);
@@ -716,8 +786,9 @@ const UserDashboard = () => {
 
     } catch (err) {
       console.error("Checkout error:", err);
-      setError(`Failed to place order: ${err.message}`);
-      alert(`Failed to place order: ${err.message}`);
+      const errorMsg = `Failed to place order: ${err.message}`;
+      setError(errorMsg);
+      alert(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -784,14 +855,14 @@ const UserDashboard = () => {
     setTrackingOrder(null);
   }, []);
 
-  // Effect to fetch data when tabs change
+  // Effect to fetch data when tabs change - FIXED: Added dependencies
   useEffect(() => {
     if (activeTab === 'orders') {
       fetchUserOrders();
     } else if (activeTab === 'menu') {
       fetchProducts();
     }
-  }, [activeTab]);
+  }, [activeTab, user]); // Added user as dependency
 
   // Effect to update customer info when user changes
   useEffect(() => {
@@ -808,6 +879,7 @@ const UserDashboard = () => {
   // Test API connection on component mount
   useEffect(() => {
     console.log('Using API URL:', API_BASE_URL);
+    console.log('Current user:', user);
     testApiConnection();
   }, []);
 
@@ -834,7 +906,7 @@ const UserDashboard = () => {
 
       {/* Debug Info */}
       <div className="fixed bottom-4 right-4 bg-blue-500 text-white p-2 rounded text-xs opacity-70">
-        API: {API_BASE_URL}
+        User: {user?.username}
       </div>
 
       {/* Enhanced Header */}
