@@ -27,13 +27,12 @@ export default function AdminPanel() {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [orderItems, setOrderItems] = useState([]);
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [sidebarOpen, setSidebarOpen] = useState(false); // Start closed on mobile
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [currency, setCurrency] = useState("FRW");
   const [editingProduct, setEditingProduct] = useState(null);
-  const [editedProduct, setEditedProduct] = useState({});
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
   const [imagePreview, setImagePreview] = useState("");
@@ -42,7 +41,6 @@ export default function AdminPanel() {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [showMobileActions, setShowMobileActions] = useState(null);
   
-  // Enhanced profile data state
   const [profileData, setProfileData] = useState({
     email: "",
     currentPassword: "",
@@ -64,7 +62,6 @@ export default function AdminPanel() {
     is_available: true
   });
 
-  // Dashboard stats
   const [dashboardStats, setDashboardStats] = useState({
     totalOrders: 0,
     pendingOrders: 0,
@@ -73,23 +70,28 @@ export default function AdminPanel() {
     totalProducts: 0
   });
 
-  // Currency conversion rates
   const exchangeRates = {
     FRW: 1,
     USD: 0.00081,
     EUR: 0.00074,
   };
 
-  // Backend URL - make sure this matches your backend server
   const BACKEND_URL = API_URL;
 
-  // Responsive breakpoint detection
+  // Enhanced authentication headers
+  const getAuthHeaders = async () => {
+    const token = await getToken();
+    return {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+  };
+
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < 1024;
       setIsMobile(mobile);
       
-      // Auto-close sidebar on mobile when switching to larger screen
       if (!mobile && sidebarOpen) {
         setSidebarOpen(false);
       }
@@ -99,7 +101,6 @@ export default function AdminPanel() {
     return () => window.removeEventListener('resize', handleResize);
   }, [sidebarOpen]);
 
-  // Close sidebar when clicking on mobile overlay
   useEffect(() => {
     if (isMobile && sidebarOpen) {
       document.body.style.overflow = 'hidden';
@@ -112,41 +113,21 @@ export default function AdminPanel() {
     };
   }, [isMobile, sidebarOpen]);
 
-  // Fixed image URL handling
   const getImageUrl = (url) => {
     if (!url) return "https://via.placeholder.com/300x200/FFA500/FFFFFF?text=No+Image";
     
-    // If it's already a full URL, return it with cache busting
     if (url.startsWith('http')) {
       const separator = url.includes('?') ? '&' : '?';
       return `${url}${separator}t=${Date.now()}`;
     }
     
-    // If it's a local upload path, prepend the backend URL
     if (url.startsWith('/uploads/')) {
       return `${BACKEND_URL}${url}?t=${Date.now()}`;
     }
     
-    // For relative paths, try with backend URL
     return `${BACKEND_URL}${url.startsWith('/') ? url : '/' + url}?t=${Date.now()}`;
   };
 
-  // Validate image URL format
-  const validateImageUrl = (url) => {
-    if (!url || url.trim() === '') return true;
-    
-    try {
-      // Allow both full URLs and local paths
-      if (url.startsWith('/uploads/')) return true;
-      
-      const urlObj = new URL(url);
-      return ['http:', 'https:'].includes(urlObj.protocol);
-    } catch (error) {
-      return false;
-    }
-  };
-
-  // Upload image to backend server
   const uploadImage = async (file) => {
     try {
       setUploading(true);
@@ -160,8 +141,6 @@ export default function AdminPanel() {
       const formData = new FormData();
       formData.append('image', file);
 
-      console.log('Uploading image:', file.name, file.size, file.type);
-
       const response = await fetch(`${BACKEND_URL}/api/upload`, {
         method: 'POST',
         headers: {
@@ -173,12 +152,15 @@ export default function AdminPanel() {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Upload failed:', response.status, errorText);
+        
+        if (response.status === 404) {
+          throw new Error("Image upload endpoint not available.");
+        }
+        
         throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
       }
 
       const result = await response.json();
-      console.log('Upload successful:', result);
-      
       toast.success("Image uploaded successfully");
       return result.imageUrl;
     } catch (error) {
@@ -190,19 +172,16 @@ export default function AdminPanel() {
     }
   };
 
-  // Handle file selection
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
     if (!file) return;
 
-    // Validate file type
     const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
     if (!validTypes.includes(file.type)) {
       toast.error("Please select a valid image file (JPEG, PNG, GIF, WebP)");
       return;
     }
 
-    // Validate file size (5MB max)
     if (file.size > 5 * 1024 * 1024) {
       toast.error("Image size should be less than 5MB");
       return;
@@ -210,7 +189,6 @@ export default function AdminPanel() {
 
     setSelectedFile(file);
 
-    // Create preview
     const reader = new FileReader();
     reader.onload = (e) => {
       setImagePreview(e.target.result);
@@ -218,20 +196,6 @@ export default function AdminPanel() {
     reader.readAsDataURL(file);
   };
 
-  // Handle image URL change
-  const handleImageUrlChange = (url) => {
-    setProductForm({...productForm, image_url: url});
-    setSelectedFile(null);
-    
-    if (url && validateImageUrl(url)) {
-      // For preview, use the actual URL
-      setImagePreview(url);
-    } else {
-      setImagePreview("");
-    }
-  };
-
-  // Check authentication and fetch data
   useEffect(() => {
     const checkSession = async () => {
       const { data, error } = await supabase.auth.getUser();
@@ -239,7 +203,6 @@ export default function AdminPanel() {
         navigate("/login");
       } else {
         setUser(data.user);
-        // Initialize profile data with current user email
         setProfileData(prev => ({ 
           ...prev, 
           email: data.user.email 
@@ -250,7 +213,6 @@ export default function AdminPanel() {
     checkSession();
   }, [navigate]);
 
-  // Fetch all data
   const fetchAllData = async () => {
     setLoading(true);
     try {
@@ -267,31 +229,29 @@ export default function AdminPanel() {
     }
   };
 
-  // Get Supabase token for API calls
   const getToken = async () => {
     const { data } = await supabase.auth.getSession();
     return data.session?.access_token;
   };
 
-  // Fetch orders from backend
   const fetchOrders = async () => {
     try {
-      const token = await getToken();
-      if (!token) {
-        toast.error("Authentication required");
-        return;
-      }
-
+      const headers = await getAuthHeaders();
+      
       const response = await fetch(`${BACKEND_URL}/api/orders`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: headers
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to fetch orders');
+        if (response.status === 401) {
+          toast.error("Authentication failed. Please login again.");
+          await supabase.auth.signOut();
+          navigate("/login");
+          return;
+        }
+        
+        const errorData = await response.json().catch(() => ({ message: 'Failed to fetch orders' }));
+        throw new Error(errorData.message || `Failed to fetch orders: ${response.status}`);
       }
       
       const ordersData = await response.json();
@@ -302,68 +262,80 @@ export default function AdminPanel() {
     }
   };
 
-  // Fetch dashboard stats
   const fetchDashboardStats = async () => {
     try {
-      const token = await getToken();
-      if (!token) return;
+      const headers = await getAuthHeaders();
 
       const response = await fetch(`${BACKEND_URL}/api/dashboard/stats`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: headers
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to fetch dashboard stats');
+        const fallbackStats = {
+          totalOrders: orders.length,
+          pendingOrders: orders.filter(o => o.status === 'pending').length,
+          completedOrders: orders.filter(o => o.status === 'completed').length,
+          totalRevenue: orders.reduce((sum, order) => sum + (order.total_amount || 0), 0),
+          totalProducts: products.length
+        };
+        setDashboardStats(fallbackStats);
+        return;
       }
       
       const stats = await response.json();
       setDashboardStats(stats);
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
+      const fallbackStats = {
+        totalOrders: orders.length,
+        pendingOrders: orders.filter(o => o.status === 'pending').length,
+        completedOrders: orders.filter(o => o.status === 'completed').length,
+        totalRevenue: orders.reduce((sum, order) => sum + (order.total_amount || 0), 0),
+        totalProducts: products.length
+      };
+      setDashboardStats(fallbackStats);
     }
   };
 
-  // Fetch products from backend
   const fetchProducts = async () => {
     try {
       const response = await fetch(`${BACKEND_URL}/api/products`);
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to fetch products');
+        const errorData = await response.json().catch(() => ({ message: 'Failed to fetch products' }));
+        throw new Error(errorData.message || `Failed to fetch products: ${response.status}`);
       }
       
       const productsData = await response.json();
-      console.log('Fetched products:', productsData);
-      setProducts(productsData);
+      
+      const mappedProducts = productsData.map(product => ({
+        id: product.id,
+        product_name: product.name || product.product_name,
+        name: product.name || product.product_name,
+        description: product.description,
+        price: product.price || product.total_amount,
+        total_amount: product.price || product.total_amount,
+        image_url: product.image_url,
+        is_available: product.is_available !== undefined ? product.is_available : true
+      }));
+      
+      setProducts(mappedProducts);
     } catch (error) {
       console.error("Error fetching products:", error);
       toast.error(error.message || "Failed to fetch products");
     }
   };
 
-  // Fetch order items
   const fetchOrderItems = async (orderId) => {
     try {
-      const token = await getToken();
-      if (!token) {
-        toast.error("Authentication required");
-        return;
-      }
+      const headers = await getAuthHeaders();
 
       const response = await fetch(`${BACKEND_URL}/api/orders/${orderId}/items`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: headers
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ message: 'Failed to fetch order items' }));
         throw new Error(errorData.message || 'Failed to fetch order items');
       }
       
@@ -371,7 +343,6 @@ export default function AdminPanel() {
       setOrderItems(itemsData);
       setSelectedOrder(orderId);
       
-      // On mobile, close sidebar when selecting order
       if (isMobile) {
         setSidebarOpen(false);
       }
@@ -381,26 +352,18 @@ export default function AdminPanel() {
     }
   };
 
-  // Update order status
   const updateOrderStatus = async (orderId, newStatus) => {
     try {
-      const token = await getToken();
-      if (!token) {
-        toast.error("Authentication required");
-        return;
-      }
+      const headers = await getAuthHeaders();
 
       const response = await fetch(`${BACKEND_URL}/api/orders/${orderId}`, {
         method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        headers: headers,
         body: JSON.stringify({ status: newStatus })
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ message: 'Failed to update order status' }));
         throw new Error(errorData.message || 'Failed to update order status');
       }
       
@@ -414,35 +377,24 @@ export default function AdminPanel() {
     }
   };
 
-  // Save product (both add and update)
   const saveProduct = async (e) => {
     e.preventDefault();
     
-    // Validate required fields
     if (!productForm.name || !productForm.description || !productForm.price) {
       toast.error("Please fill in all required fields");
       return;
     }
 
     try {
-      const token = await getToken();
-      if (!token) {
-        toast.error("Authentication required");
-        return;
-      }
-
+      const headers = await getAuthHeaders();
       let imageUrl = productForm.image_url;
 
-      // Upload image if file is selected
       if (selectedFile) {
-        console.log('Starting image upload...');
         const uploadedUrl = await uploadImage(selectedFile);
         if (uploadedUrl) {
           imageUrl = uploadedUrl;
-          console.log('Image uploaded, URL:', uploadedUrl);
         } else {
-          console.log('Image upload failed');
-          return; // Stop if upload failed
+          return;
         }
       }
 
@@ -454,38 +406,29 @@ export default function AdminPanel() {
         is_available: productForm.is_available
       };
 
-      console.log('Saving product data:', productData);
-
       let response;
       if (editingProduct) {
-        // Update existing product
         response = await fetch(`${BACKEND_URL}/api/products/${editingProduct}`, {
           method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
+          headers: headers,
           body: JSON.stringify(productData)
         });
       } else {
-        // Create new product
         response = await fetch(`${BACKEND_URL}/api/products`, {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
+          headers: headers,
           body: JSON.stringify(productData)
         });
       }
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ 
+          message: `Failed to ${editingProduct ? 'update' : 'create'} product` 
+        }));
         throw new Error(errorData.message || `Failed to ${editingProduct ? 'update' : 'create'} product`);
       }
       
-      const savedProduct = await response.json();
-      console.log('Product saved successfully:', savedProduct);
+      await response.json();
       
       await fetchProducts();
       await fetchDashboardStats();
@@ -500,27 +443,19 @@ export default function AdminPanel() {
     }
   };
 
-  // Delete product
   const deleteProduct = async (productId) => {
     if (!window.confirm("Are you sure you want to delete this product? This action cannot be undone.")) return;
     
     try {
-      const token = await getToken();
-      if (!token) {
-        toast.error("Authentication required");
-        return;
-      }
+      const headers = await getAuthHeaders();
 
       const response = await fetch(`${BACKEND_URL}/api/products/${productId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: headers
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
+        const errorData = await response.json().catch(() => ({ message: 'Failed to delete product' }));
         throw new Error(errorData.message || 'Failed to delete product');
       }
       
@@ -534,11 +469,9 @@ export default function AdminPanel() {
     }
   };
 
-  // Update user credentials
   const updateCredentials = async (e) => {
     e.preventDefault();
     
-    // Validate password requirements
     if (profileData.newPassword) {
       if (profileData.newPassword.length < 6) {
         toast.error("Password must be at least 6 characters long");
@@ -550,7 +483,6 @@ export default function AdminPanel() {
         return;
       }
 
-      // Require current password for password changes
       if (!profileData.currentPassword) {
         toast.error("Please enter your current password to change password");
         return;
@@ -564,7 +496,6 @@ export default function AdminPanel() {
         email: profileData.email
       };
 
-      // Only include password if it's being changed
       if (profileData.newPassword) {
         updateData.password = profileData.newPassword;
       }
@@ -577,7 +508,6 @@ export default function AdminPanel() {
         setUser(updatedUser.user);
         toast.success("Profile updated successfully");
         
-        // Update profile data state to clear passwords
         setProfileData({
           email: updatedUser.user.email,
           currentPassword: "",
@@ -596,18 +526,16 @@ export default function AdminPanel() {
     }
   };
 
-  // Start editing product
   const startEditingProduct = (product) => {
     setEditingProduct(product.id);
     setProductForm({ 
-      name: product.product_name,
+      name: product.name || product.product_name,
       description: product.description,
-      price: product.total_amount,
+      price: product.price || product.total_amount,
       image_url: product.image_url,
-      is_available: product.is_available
+      is_available: product.is_available !== undefined ? product.is_available : true
     });
     
-    // Set preview for editing
     if (product.image_url) {
       setImagePreview(getImageUrl(product.image_url));
     } else {
@@ -619,14 +547,12 @@ export default function AdminPanel() {
     setShowMobileActions(null);
   };
 
-  // Start adding product
   const startAddingProduct = () => {
     setEditingProduct(null);
     resetProductForm();
     setShowProductModal(true);
   };
 
-  // Reset product form
   const resetProductForm = () => {
     setProductForm({
       name: "",
@@ -639,14 +565,12 @@ export default function AdminPanel() {
     setSelectedFile(null);
   };
 
-  // Close product modal
   const closeProductModal = () => {
     setShowProductModal(false);
     setEditingProduct(null);
     resetProductForm();
   };
 
-  // Close profile modal
   const closeProfileModal = () => {
     setShowProfileModal(false);
     setProfileData({
@@ -661,14 +585,12 @@ export default function AdminPanel() {
     setShowConfirmPassword(false);
   };
 
-  // Handle logout
   const handleLogout = async () => {
     await supabase.auth.signOut();
     toast.success("Logged out successfully")
     navigate("/login");
   };
 
-  // Filter orders based on search and status
   const filteredOrders = orders.filter(order => {
     const matchesSearch = order.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          order.customer_phone?.includes(searchTerm) ||
@@ -677,7 +599,6 @@ export default function AdminPanel() {
     return matchesSearch && matchesStatus;
   });
 
-  // Get status color
   const getStatusColor = (status) => {
     switch (status) {
       case "pending": return "bg-yellow-100 text-yellow-800 border-yellow-200";
@@ -687,7 +608,6 @@ export default function AdminPanel() {
     }
   };
 
-  // Get status icon
   const getStatusIcon = (status) => {
     switch (status) {
       case "pending": return faClock;
@@ -697,7 +617,6 @@ export default function AdminPanel() {
     }
   };
 
-  // Format date
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -709,7 +628,6 @@ export default function AdminPanel() {
     });
   };
 
-  // Currency formatting
   const formatCurrency = (amount) => {
     if (!amount) return `FRW 0`;
     
@@ -727,7 +645,6 @@ export default function AdminPanel() {
     }
   };
 
-  // Calculate statistics for charts
   const getOrderStatusDistribution = () => {
     const statusCounts = {
       pending: 0,
@@ -744,19 +661,16 @@ export default function AdminPanel() {
 
   const statusDistribution = getOrderStatusDistribution();
 
-  // Enhanced Image component with better error handling
   const ProductImage = ({ src, alt, className = "w-full h-32 object-cover rounded-lg bg-gray-100" }) => {
     const [imgSrc, setImgSrc] = useState(getImageUrl(src));
     const [hasError, setHasError] = useState(false);
 
     const handleError = () => {
-      console.error('Image failed to load:', src);
       setHasError(true);
       setImgSrc("https://via.placeholder.com/300x200/FFA500/FFFFFF?text=No+Image");
     };
 
     const handleLoad = () => {
-      console.log('Image loaded successfully:', src);
       setHasError(false);
     };
 
@@ -771,7 +685,6 @@ export default function AdminPanel() {
     );
   };
 
-  // Mobile order actions component
   const MobileOrderActions = ({ order, onClose }) => (
     <div className="fixed inset-0 bg-black/50 z-40 flex items-end justify-center p-4 lg:hidden">
       <div className="bg-white rounded-t-2xl w-full max-w-md shadow-2xl animate-slide-up">
@@ -813,7 +726,6 @@ export default function AdminPanel() {
     </div>
   );
 
-  // Mobile product actions component
   const MobileProductActions = ({ product, onClose }) => (
     <div className="fixed inset-0 bg-black/50 z-40 flex items-end justify-center p-4 lg:hidden">
       <div className="bg-white rounded-t-2xl w-full max-w-md shadow-2xl animate-slide-up">
@@ -963,7 +875,7 @@ export default function AdminPanel() {
               </h1>
               <p className="text-xs text-gray-600 truncate">{user?.email}</p>
             </div>
-            <div className="w-9"></div> {/* Spacer for balance */}
+            <div className="w-9"></div>
           </div>
 
           {/* Desktop Header */}
@@ -1852,7 +1764,6 @@ export default function AdminPanel() {
                             alt="Preview"
                             className="w-full h-24 lg:h-32 object-cover rounded-lg"
                             onError={(e) => {
-                              console.error('Preview image failed to load');
                               e.target.src = "https://via.placeholder.com/300x200/FFA500/FFFFFF?text=Invalid+Image";
                             }}
                           />
