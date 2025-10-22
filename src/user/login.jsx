@@ -21,6 +21,7 @@ const UserLogin = ({ onLogin }) => {
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [redirecting, setRedirecting] = useState(false);
 
   const validateForm = () => {
     const errors = {};
@@ -87,7 +88,7 @@ const UserLogin = ({ onLogin }) => {
           };
 
       console.log('🔄 Making request to:', url);
-      console.log('📦 Payload:', { ...payload, password: '***' }); // Hide password in logs
+      console.log('📦 Payload:', { ...payload, password: '***' });
       
       const response = await fetch(url, {
         method: 'POST',
@@ -117,12 +118,14 @@ const UserLogin = ({ onLogin }) => {
         if (data.user) {
           // Store user data
           localStorage.setItem('user', JSON.stringify(data.user));
-          setMessage('✅ Login successful! Redirecting...');
+          setMessage('✅ Login successful! Redirecting to dashboard...');
           setMessageType('success');
+          setRedirecting(true);
           
+          // Redirect after a short delay to show success message
           setTimeout(() => {
             onLogin(data.user);
-          }, 1500);
+          }, 2000);
         } else {
           throw new Error('No user data received from server');
         }
@@ -174,6 +177,7 @@ Please:
     setFormData({ username: '', email: '', password: '' });
     setFormErrors({});
     setMessage('');
+    setRedirecting(false);
   };
 
   const handleInputChange = (e) => {
@@ -349,6 +353,11 @@ Please:
                   }`} 
                 />
                 <span>{message}</span>
+                {redirecting && (
+                  <div className="ml-2">
+                    <FontAwesomeIcon icon={faSpinner} className="animate-spin text-green-500" />
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -356,13 +365,18 @@ Please:
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || redirecting}
             className="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white py-3 px-4 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center shadow-lg hover:shadow-xl transform hover:scale-105 disabled:scale-100"
           >
             {loading ? (
               <>
                 <FontAwesomeIcon icon={faSpinner} className="animate-spin mr-2" />
                 {isLogin ? 'Signing In...' : 'Creating Account...'}
+              </>
+            ) : redirecting ? (
+              <>
+                <FontAwesomeIcon icon={faSpinner} className="animate-spin mr-2" />
+                Redirecting...
               </>
             ) : (
               <>
@@ -376,10 +390,10 @@ Please:
         {/* Test Connection Button */}
         <button
           onClick={testConnection}
-          disabled={loading}
+          disabled={loading || redirecting}
           className="w-full mt-4 bg-gray-500 hover:bg-gray-600 disabled:bg-gray-300 text-white py-2 px-4 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center"
         >
-          <FontAwesomeIcon icon={faSpinner} className={loading ? 'animate-spin mr-2' : 'mr-2'} />
+          <FontAwesomeIcon icon={faSpinner} className={(loading || redirecting) ? 'animate-spin mr-2' : 'mr-2'} />
           Test Server Connection
         </button>
 
@@ -387,7 +401,8 @@ Please:
         <div className="text-center mt-6">
           <button
             onClick={toggleMode}
-            className="text-orange-600 hover:text-orange-800 font-medium transition-colors duration-200 text-sm"
+            disabled={redirecting}
+            className="text-orange-600 hover:text-orange-800 disabled:text-orange-300 font-medium transition-colors duration-200 text-sm"
           >
             <FontAwesomeIcon 
               icon={isLogin ? faUserPlus : faSignInAlt} 
