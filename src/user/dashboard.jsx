@@ -1,1729 +1,1947 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useEffect, useState } from "react";
 import { API_URL } from "../config";
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { useNavigate } from "react-router-dom";
+import { supabase } from "../supabaseClient";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
-  faUser, faHistory, faBox, faEdit, faSignOutAlt,
-  faSpinner, faCheckCircle, faTimesCircle, faCheck,
-  faShoppingCart, faDollarSign, faCalendarAlt,
-  faPlus, faMinus, faTrash, faCreditCard, faPhone,
-  faEnvelope, faMapMarkerAlt, faHamburger, faSearch,
-  faBars, faTimes, faSave, faUndo, faTruck, faExclamationTriangle,
-  faEye, faMapPin, faClock, faMobileAlt, faQrcode,
-  faMoneyBill, faUserCircle, faStar, faCrown, faBell,
-  faUserShield, faIdCard, faLocationDot, faShieldAlt, faChartBar,
-  faReceipt
-} from '@fortawesome/free-solid-svg-icons';
+  faSignOutAlt, faUserShield, faShoppingCart,
+  faChartBar, faEdit, faTrash, faEye, 
+  faCheckCircle, faTimesCircle, faClock,
+  faBox, faHome, faBars, faTimes, faRefresh,
+  faSearch, faFilter, faMoneyBillWave,
+  faHamburger, faSave, faCancel, faUsers,
+  faCog, faLock, faEnvelope, faUser,
+  faPlus, faUpload, faList, faDatabase,
+  faReceipt, faUserCircle, faStore,
+  faImage, faLink, faCloudUpload,
+  faKey, faShieldAlt, faEyeSlash, faEye as faEyeOpen,
+  faEllipsisV, faEllipsisH
+} from "@fortawesome/free-solid-svg-icons";
+import { toast } from "react-toastify";
 
-// User context simulation
-const useUser = () => {
-  const [user, setUser] = useState(() => {
-    const saved = localStorage.getItem('user');
-    return saved ? JSON.parse(saved) : null;
+export default function AdminPanel() {
+  const navigate = useNavigate();
+  const [user, setUser] = useState(null);
+  const [orders, setOrders] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [orderItems, setOrderItems] = useState([]);
+  const [activeTab, setActiveTab] = useState("dashboard");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [currency, setCurrency] = useState("FRW");
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [imagePreview, setImagePreview] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  const [showMobileActions, setShowMobileActions] = useState(null);
+  
+  const [profileData, setProfileData] = useState({
+    email: "",
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+    twoFactorEnabled: false
+  });
+  
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [updatingProfile, setUpdatingProfile] = useState(false);
+
+  const [productForm, setProductForm] = useState({
+    name: "",
+    description: "",
+    price: "",
+    image_url: "",
+    is_available: true
   });
 
-  const login = (userData) => {
-    setUser(userData);
-    localStorage.setItem('user', JSON.stringify(userData));
-  };
+  const [dashboardStats, setDashboardStats] = useState({
+    totalOrders: 0,
+    pendingOrders: 0,
+    completedOrders: 0,
+    totalRevenue: 0,
+    totalProducts: 0
+  });
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
-  };
-
-  return { user, login, logout };
-};
-
-// Reuse ProductImage component from HomePage
-const ProductImage = React.memo(({ product, className = "h-40 sm:h-48 w-full object-cover" }) => {
-  const [imgSrc, setImgSrc] = useState("");
-  const [hasError, setHasError] = useState(false);
-
-  const FALLBACK_IMAGES = {
-    burger: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=300&h=200&fit=crop",
-    pizza: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?w=300&h=200&fit=crop",
-    fries: "https://images.unsplash.com/photo-1573080496219-bb080dd4f877?w=300&h=200&fit=crop",
-    chicken: "https://images.unsplash.com/photo-1626645738196-c2a7c87a8f58?w=300&h=200&fit=crop",
-    drink: "https://images.unsplash.com/photo-1544145945-f90425340c7e?w=300&h=200&fit=crop",
-    default: "https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=300&h=200&fit=crop"
+  const exchangeRates = {
+    FRW: 1,
+    USD: 0.00081,
+    EUR: 0.00074,
   };
 
   const BACKEND_URL = API_URL;
 
-  const getImageUrl = useCallback((imageUrl) => {
-    if (!imageUrl) return null;
+  // FIXED: Enhanced authentication headers for your server
+  const getAuthHeaders = async () => {
+    const { data } = await supabase.auth.getSession();
+    const user = data.session?.user;
     
-    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
-      const separator = imageUrl.includes('?') ? '&' : '?';
-      return `${imageUrl}${separator}t=${Date.now()}`;
+    if (!user) {
+      throw new Error("No user session found");
     }
-    
-    if (imageUrl.startsWith('/uploads/')) {
-      return `${BACKEND_URL}${imageUrl}?t=${Date.now()}`;
-    }
-    
-    return `${BACKEND_URL}${imageUrl.startsWith('/') ? imageUrl : '/' + imageUrl}?t=${Date.now()}`;
-  }, [BACKEND_URL]);
 
-  const getFallbackImage = useCallback((productName) => {
-    const name = productName?.toLowerCase() || '';
-    if (name.includes('burger')) return FALLBACK_IMAGES.burger;
-    if (name.includes('pizza')) return FALLBACK_IMAGES.pizza;
-    if (name.includes('fries') || name.includes('fry')) return FALLBACK_IMAGES.fries;
-    if (name.includes('chicken')) return FALLBACK_IMAGES.chicken;
-    if (name.includes('drink') || name.includes('soda') || name.includes('juice')) return FALLBACK_IMAGES.drink;
-    
-    return FALLBACK_IMAGES.default;
-  }, []);
+    return {
+      'Content-Type': 'application/json',
+      'user-id': user.id,
+      'user-email': user.email
+    };
+  };
 
   useEffect(() => {
-    if (!product.image_url) {
-      setImgSrc(getFallbackImage(product.product_name));
-      return;
-    }
-    
-    if (product.image_url) {
-      setImgSrc(getImageUrl(product.image_url));
-    }
-  }, [product.image_url, product.product_name, getImageUrl, getFallbackImage]);
-
-  const handleError = useCallback(() => {
-    setHasError(true);
-    setImgSrc(getFallbackImage(product.product_name));
-  }, [product.product_name, getFallbackImage]);
-
-  return (
-    <img
-      src={imgSrc}
-      alt={product.product_name}
-      className={className}
-      onError={handleError}
-      loading="lazy"
-    />
-  );
-});
-
-// Enhanced Product Card with better responsive design
-const ProductCard = React.memo(({ product, onAddToCart }) => {
-  const handleAddToCart = useCallback(() => {
-    onAddToCart(product);
-  }, [product, onAddToCart]);
-
-  const formatPrice = useCallback((price) => {
-    return new Intl.NumberFormat("rw-RW", { 
-      style: "currency", 
-      currency: "RWF" 
-    }).format(price || 0);
-  }, []);
-
-  return (
-    <div className="bg-white rounded-xl sm:rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden border border-gray-200 hover:border-orange-300 group">
-      <div className="relative overflow-hidden">
-        <ProductImage
-          product={product}
-          className="h-48 sm:h-56 w-full object-cover group-hover:scale-105 transition-transform duration-500"
-        />
-        {product.is_popular && (
-          <div className="absolute top-3 left-3 bg-gradient-to-r from-orange-500 to-amber-500 text-white px-3 py-1 rounded-full text-xs font-bold shadow-lg">
-            <span>🔥 Popular</span>
-          </div>
-        )}
-      </div>
-      <div className="p-4 sm:p-6">
-        <div className="mb-4">
-          <h3 className="font-bold text-gray-800 mb-2 text-lg sm:text-xl line-clamp-1">{product.product_name}</h3>
-          <p className="text-gray-600 text-sm sm:text-base leading-relaxed line-clamp-2 min-h-[3rem]">{product.description}</p>
-        </div>
-        <div className="flex items-center justify-between">
-          <p className="text-green-600 font-bold text-xl sm:text-2xl">
-            {formatPrice(product.total_amount)}
-          </p>
-          <button 
-            onClick={handleAddToCart}
-            disabled={!product.is_available}
-            className={`px-4 sm:px-6 py-2 sm:py-3 rounded-lg sm:rounded-xl transition-all duration-300 flex items-center space-x-2 text-sm sm:text-base font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 ${
-              product.is_available 
-                ? 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white' 
-                : 'bg-gray-400 text-gray-200 cursor-not-allowed'
-            }`}
-          >
-            <FontAwesomeIcon icon={faPlus} className="text-sm" />
-            <span>{product.is_available ? 'Add to Cart' : 'Out of Stock'}</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-});
-
-// Enhanced Cart Item with better responsive design
-const CartItem = React.memo(({ item, onUpdateQuantity, onRemove }) => {
-  const handleDecrease = useCallback(() => {
-    onUpdateQuantity(item.id, item.quantity - 1);
-  }, [item.id, item.quantity, onUpdateQuantity]);
-
-  const handleIncrease = useCallback(() => {
-    onUpdateQuantity(item.id, item.quantity + 1);
-  }, [item.id, item.quantity, onUpdateQuantity]);
-
-  const handleRemove = useCallback(() => {
-    onRemove(item.id);
-  }, [item.id, onRemove]);
-
-  const formatPrice = useCallback((price) => {
-    return new Intl.NumberFormat("rw-RW", { 
-      style: "currency", 
-      currency: "RWF" 
-    }).format(price || 0);
-  }, []);
-
-  return (
-    <div className="flex items-center space-x-4 bg-white p-4 sm:p-6 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300">
-      <ProductImage
-        product={item}
-        className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-lg bg-gray-200 flex-shrink-0"
-      />
-      <div className="flex-1 min-w-0">
-        <h3 className="font-semibold text-gray-800 text-base sm:text-lg truncate">{item.product_name}</h3>
-        <p className="text-green-600 font-bold text-sm sm:text-base mt-1">{formatPrice(item.total_amount)}</p>
-        <div className="flex items-center space-x-3 mt-2">
-          <div className="flex items-center space-x-3 bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
-            <button 
-              onClick={handleDecrease}
-              className="w-6 h-6 sm:w-7 sm:h-7 rounded flex items-center justify-center hover:bg-gray-200 transition-colors duration-200"
-            >
-              <FontAwesomeIcon icon={faMinus} className="text-gray-600 text-xs" />
-            </button>
-            <span className="w-8 text-center font-bold text-gray-800 text-base sm:text-lg">{item.quantity}</span>
-            <button 
-              onClick={handleIncrease}
-              className="w-6 h-6 sm:w-7 sm:h-7 rounded flex items-center justify-center hover:bg-gray-200 transition-colors duration-200"
-            >
-              <FontAwesomeIcon icon={faPlus} className="text-gray-600 text-xs" />
-            </button>
-          </div>
-          <button 
-            onClick={handleRemove}
-            className="text-red-500 hover:text-red-700 p-2 rounded-lg hover:bg-red-50 transition-colors duration-200"
-          >
-            <FontAwesomeIcon icon={faTrash} className="text-base" />
-          </button>
-        </div>
-      </div>
-      <div className="text-right flex-shrink-0">
-        <p className="font-bold text-gray-800 text-base sm:text-lg">
-          {formatPrice((item.total_amount || 0) * item.quantity)}
-        </p>
-      </div>
-    </div>
-  );
-});
-
-// Order Tracking Component - Enhanced responsive design
-const OrderTracking = React.memo(({ order, onClose }) => {
-  const getStatusSteps = (status) => {
-    const steps = [
-      { id: 1, name: 'Order Placed', status: 'completed', description: 'Your order has been received' },
-      { id: 2, name: 'Preparing', status: status === 'preparing' || status === 'on the way' || status === 'completed' ? 'completed' : 'pending', description: 'Kitchen is preparing your food' },
-      { id: 3, name: 'On the Way', status: status === 'on the way' || status === 'completed' ? 'completed' : 'pending', description: 'Driver is delivering your order' },
-      { id: 4, name: 'Delivered', status: status === 'completed' ? 'completed' : 'pending', description: 'Order has been delivered' }
-    ];
-    return steps;
-  };
-
-  const steps = getStatusSteps(order.status);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl border border-gray-200 animate-slide-up">
-        <div className="bg-gradient-to-r from-orange-500 to-amber-500 p-4 sm:p-6">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl sm:text-2xl font-bold text-white">Order Tracking</h2>
-            <button 
-              onClick={onClose}
-              className="text-white hover:text-orange-200 p-2 rounded-full hover:bg-white/20 transition-colors duration-200"
-            >
-              <FontAwesomeIcon icon={faTimes} className="text-lg" />
-            </button>
-          </div>
-        </div>
-        
-        <div className="p-4 sm:p-6 max-h-96 overflow-y-auto">
-          <div className="mb-6">
-            <h3 className="font-semibold text-gray-800 mb-4 flex items-center text-lg">
-              <FontAwesomeIcon icon={faReceipt} className="text-orange-500 mr-3 text-lg" />
-              Order Summary
-            </h3>
-            <div className="space-y-3">
-              {order.cart?.map((item, index) => (
-                <div key={index} className="flex justify-between items-center bg-gray-50 p-4 rounded-lg border border-gray-200">
-                  <span className="text-gray-700 text-sm sm:text-base">{item.product_name} x {item.quantity}</span>
-                  <span className="font-semibold text-green-600 text-sm sm:text-base">
-                    {new Intl.NumberFormat("rw-RW", { style: "currency", currency: "RWF" }).format((item.total_amount || item.price || 0) * item.quantity)}
-                  </span>
-                </div>
-              ))}
-              <div className="border-t border-gray-200 pt-4 mt-4">
-                <div className="flex justify-between items-center font-bold text-lg">
-                  <span>Total</span>
-                  <span className="text-green-600">
-                    {new Intl.NumberFormat("rw-RW", { style: "currency", currency: "RWF" }).format(order.total || 0)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="mb-6">
-            <h3 className="font-semibold text-gray-800 mb-4 flex items-center text-lg">
-              <FontAwesomeIcon icon={faTruck} className="text-orange-500 mr-3 text-lg" />
-              Order Status
-            </h3>
-            <div className="space-y-4">
-              {steps.map((step, index) => (
-                <div key={step.id} className="flex items-start space-x-4 relative">
-                  <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
-                    step.status === 'completed' 
-                      ? 'bg-green-500 text-white' 
-                      : 'bg-gray-300 text-gray-600'
-                  }`}>
-                    {step.status === 'completed' && (
-                      <FontAwesomeIcon icon={faCheckCircle} className="text-lg" />
-                    )}
-                  </div>
-                  <div className="flex-1">
-                    <p className={`font-semibold text-lg ${
-                      step.status === 'completed' ? 'text-green-600' : 'text-gray-600'
-                    }`}>
-                      {step.name}
-                    </p>
-                    <p className="text-gray-500 text-base">{step.description}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-orange-50 rounded-xl p-4 sm:p-6 border border-orange-200">
-            <h3 className="font-semibold text-gray-800 mb-4 flex items-center text-lg">
-              <FontAwesomeIcon icon={faMapMarkerAlt} className="text-orange-500 mr-3 text-lg" />
-              Delivery Information
-            </h3>
-            <div className="space-y-3 text-base">
-              <div className="flex items-center space-x-3">
-                <FontAwesomeIcon icon={faMapPin} className="text-orange-500 text-lg" />
-                <span><strong>Address:</strong> {order.customer_address}</span>
-              </div>
-              <div className="flex items-center space-x-3">
-                <FontAwesomeIcon icon={faPhone} className="text-orange-500 text-lg" />
-                <span><strong>Phone:</strong> {order.customer_phone}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <div className="border-t border-gray-200 p-4 sm:p-6 bg-gray-50">
-          <div className="flex justify-center">
-            <button 
-              onClick={onClose}
-              className="bg-gray-500 hover:bg-gray-600 text-white py-3 px-8 rounded-xl transition-colors duration-200 font-semibold text-base"
-            >
-              Close Tracking
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-});
-
-// Payment Methods Component - Enhanced responsive design
-const PaymentMethods = React.memo(({ 
-  selectedPayment, 
-  onPaymentChange, 
-  cartSummary, 
-  formatPrice 
-}) => {
-  const MOMO_NUMBER = "0788295765";
-  const MOMO_OWNER = "TUYISENGE Gashugi Arnaud";
-
-  const handleCopyNumber = () => {
-    navigator.clipboard.writeText(MOMO_NUMBER);
-    alert('MoMo number copied to clipboard!');
-  };
-
-  return (
-    <div className="space-y-4 sm:space-y-6">
-      <h3 className="text-xl font-bold text-gray-800 mb-4 sm:mb-6 flex items-center">
-        <FontAwesomeIcon icon={faCreditCard} className="text-orange-500 mr-3 text-xl" />
-        Payment Method
-      </h3>
+    const handleResize = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
       
-      <div 
-        className={`border-2 rounded-xl sm:rounded-2xl p-4 sm:p-6 cursor-pointer transition-all duration-300 ${
-          selectedPayment === 'momo' 
-            ? 'border-orange-500 bg-orange-50' 
-            : 'border-gray-300 hover:border-orange-300 bg-white hover:bg-orange-50'
-        }`}
-        onClick={() => onPaymentChange('momo')}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <div className="bg-orange-500 p-3 sm:p-4 rounded-xl">
-              <FontAwesomeIcon icon={faMobileAlt} className="text-white text-xl" />
-            </div>
-            <div>
-              <h4 className="font-bold text-gray-800 text-lg">Mobile Money (MoMo)</h4>
-              <p className="text-gray-600 text-base">Pay with MTN Mobile Money</p>
-            </div>
-          </div>
-          <div className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full border-2 flex items-center justify-center ${
-            selectedPayment === 'momo' 
-              ? 'bg-orange-500 border-orange-500' 
-              : 'border-gray-400'
-          }`}>
-            {selectedPayment === 'momo' && (
-              <FontAwesomeIcon icon={faCheck} className="text-white text-xs" />
-            )}
-          </div>
-        </div>
-
-        {selectedPayment === 'momo' && (
-          <div className="mt-4 p-4 sm:p-6 bg-orange-100 rounded-xl border border-orange-200">
-            <div className="space-y-4">
-              <div className="bg-white p-4 sm:p-6 rounded-xl border border-orange-300">
-                <div className="space-y-3 text-base">
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600 font-medium">Send to:</span>
-                    <span className="font-bold text-orange-600">{MOMO_OWNER}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600 font-medium">MoMo Number:</span>
-                    <div className="flex items-center space-x-3">
-                      <span className="font-mono font-bold text-orange-600 text-lg">{MOMO_NUMBER}</span>
-                      <button 
-                        onClick={handleCopyNumber}
-                        className="text-orange-500 hover:text-orange-700 text-sm bg-orange-100 px-3 py-2 rounded-lg font-medium"
-                      >
-                        Copy
-                      </button>
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-gray-600 font-medium">Amount:</span>
-                    <span className="font-bold text-green-600 text-lg">{formatPrice(cartSummary.total)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div 
-        className={`border-2 rounded-xl sm:rounded-2xl p-4 sm:p-6 cursor-pointer transition-all duration-300 ${
-          selectedPayment === 'cash' 
-            ? 'border-orange-500 bg-orange-50' 
-            : 'border-gray-300 hover:border-orange-300 bg-white hover:bg-orange-50'
-        }`}
-        onClick={() => onPaymentChange('cash')}
-      >
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <div className="bg-orange-500 p-3 sm:p-4 rounded-xl">
-              <FontAwesomeIcon icon={faMoneyBill} className="text-white text-xl" />
-            </div>
-            <div>
-              <h4 className="font-bold text-gray-800 text-lg">Cash on Delivery</h4>
-              <p className="text-gray-600 text-base">Pay when you receive your order</p>
-            </div>
-          </div>
-          <div className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full border-2 flex items-center justify-center ${
-            selectedPayment === 'cash' 
-              ? 'bg-orange-500 border-orange-500' 
-              : 'border-gray-400'
-          }`}>
-            {selectedPayment === 'cash' && (
-              <FontAwesomeIcon icon={faCheck} className="text-white text-xs" />
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-});
-
-// Stats Card Component - Enhanced responsive design
-const StatsCard = React.memo(({ icon, title, value, color }) => {
-  return (
-    <div className="bg-white rounded-2xl p-4 sm:p-6 border border-gray-200 shadow-lg hover:shadow-xl transition-shadow duration-300">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-gray-600 text-sm sm:text-base mb-2">{title}</p>
-          <p className="text-2xl sm:text-3xl font-bold text-gray-800">{value}</p>
-        </div>
-        <div className={`p-3 sm:p-4 rounded-2xl ${color}`}>
-          <FontAwesomeIcon icon={icon} className="text-white text-xl sm:text-2xl" />
-        </div>
-      </div>
-    </div>
-  );
-});
-
-const UserDashboard = () => {
-  const { user, logout } = useUser();
-  const [activeTab, setActiveTab] = useState('menu');
-  const [orders, setOrders] = useState([]);
-  const [products, setProducts] = useState([]);
-  const [cart, setCart] = useState([]);
-  const [userProfile, setUserProfile] = useState(user || {});
-  const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [showCart, setShowCart] = useState(false);
-  const [showCheckout, setShowCheckout] = useState(false);
-  const [orderSuccess, setOrderSuccess] = useState(false);
-  const [customerInfo, setCustomerInfo] = useState({
-    name: user?.username || "",
-    phone: user?.phone || "",
-    address: user?.address || ""
-  });
-  const [showEditProfile, setShowEditProfile] = useState(false);
-  const [error, setError] = useState('');
-  const [trackingOrder, setTrackingOrder] = useState(null);
-  const [selectedPayment, setSelectedPayment] = useState('momo');
-  const [showUserMenu, setShowUserMenu] = useState(false);
-
-  // Use the Render backend URL directly
-  const API_BASE_URL = 'https://backend-wgm2.onrender.com/api';
-
-  // Enhanced fetch function with better error handling and debugging
-  const fetchWithAuth = async (url, options = {}) => {
-    const headers = {
-      'Content-Type': 'application/json',
-      ...options.headers,
+      if (!mobile && sidebarOpen) {
+        setSidebarOpen(false);
+      }
     };
 
-    // Add user authentication headers if user exists - FIXED: Match server expectations
-    if (user) {
-      headers['user-id'] = user.id?.toString() || '';
-      headers['user-email'] = user.email || '';
-      
-      console.log('Auth headers set:', {
-        'user-id': user.id,
-        'user-email': user.email
-      });
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    if (isMobile && sidebarOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
     }
 
-    try {
-      console.log(`Making request to: ${API_BASE_URL}${url}`);
-      const response = await fetch(`${API_BASE_URL}${url}`, {
-        ...options,
-        headers,
-      });
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [isMobile, sidebarOpen]);
 
-      console.log(`Response status: ${response.status}`);
+  const getImageUrl = (url) => {
+    if (!url) return "https://via.placeholder.com/300x200/FFA500/FFFFFF?text=No+Image";
+    
+    if (url.startsWith('http')) {
+      const separator = url.includes('?') ? '&' : '?';
+      return `${url}${separator}t=${Date.now()}`;
+    }
+    
+    if (url.startsWith('/uploads/')) {
+      return `${BACKEND_URL}${url}?t=${Date.now()}`;
+    }
+    
+    return `${BACKEND_URL}${url.startsWith('/') ? url : '/' + url}?t=${Date.now()}`;
+  };
+
+  const uploadImage = async (file) => {
+    try {
+      setUploading(true);
+      
+      const headers = await getAuthHeaders();
+      if (!headers['user-id'] || !headers['user-email']) {
+        toast.error("Authentication required");
+        return null;
+      }
+
+      const formData = new FormData();
+      formData.append('image', file);
+
+      const response = await fetch(`${BACKEND_URL}/api/upload`, {
+        method: 'POST',
+        headers: headers,
+        body: formData
+      });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Server error response:', errorText);
+        console.error('Upload failed:', response.status, errorText);
         
-        // Handle specific error cases
-        if (response.status === 401) {
-          throw new Error('Authentication failed. Please log in again.');
-        } else if (response.status === 404) {
-          throw new Error('Requested resource not found.');
-        } else if (response.status === 500) {
-          throw new Error('Server error. Please try again later.');
+        if (response.status === 404) {
+          throw new Error("Image upload endpoint not available.");
         }
         
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
       }
 
-      const data = await response.json();
-      console.log('Success response:', data);
-      return data;
-
+      const result = await response.json();
+      toast.success("Image uploaded successfully");
+      return result.imageUrl;
     } catch (error) {
-      console.error(`Fetch error for ${url}:`, error);
-      if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-        throw new Error('Cannot connect to server. Please check your internet connection and try again.');
-      }
-      throw error;
+      console.error("Error uploading image:", error);
+      toast.error(`Failed to upload image: ${error.message}`);
+      return null;
+    } finally {
+      setUploading(false);
     }
   };
 
-  // FIXED: Enhanced user orders fetch with better error handling
-  const fetchUserOrders = async () => {
-    try {
-      setLoading(true);
-      setError('');
-      
-      if (!user || !user.id || !user.email) {
-        console.error('User data missing:', { user });
-        throw new Error('User information is missing. Please log in again.');
-      }
+  const handleFileSelect = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
 
-      console.log('Fetching orders for user:', { 
-        email: user.email, 
-        username: user.username,
-        userId: user.id 
-      });
+    const validTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      toast.error("Please select a valid image file (JPEG, PNG, GIF, WebP)");
+      return;
+    }
 
-      const data = await fetchWithAuth('/orders/user');
-      
-      // Handle both array and object responses
-      if (data && typeof data === 'object') {
-        if (Array.isArray(data)) {
-          setOrders(data);
-        } else if (data.message) {
-          // If server returns a message instead of array (no orders)
-          console.log('Server message:', data.message);
-          setOrders([]);
-        } else {
-          // If it's an object but not an array, wrap it in array
-          setOrders([data]);
-        }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Image size should be less than 5MB");
+      return;
+    }
+
+    setSelectedFile(file);
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      setImagePreview(e.target.result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data.user) {
+        navigate("/login");
       } else {
-        setOrders([]);
+        setUser(data.user);
+        setProfileData(prev => ({ 
+          ...prev, 
+          email: data.user.email 
+        }));
+        fetchAllData();
       }
-      
+    };
+    checkSession();
+  }, [navigate]);
+
+  const fetchAllData = async () => {
+    setLoading(true);
+    try {
+      await Promise.all([
+        fetchOrders(),
+        fetchProducts(),
+        fetchDashboardStats()
+      ]);
     } catch (error) {
-      console.error('Error fetching orders:', error);
-      setError(`Failed to fetch orders: ${error.message}`);
-      setOrders([]);
+      console.error("Error fetching data:", error);
+      toast.error("Failed to refresh data");
     } finally {
       setLoading(false);
     }
   };
 
-  // FIXED: Enhanced products fetch with fallback
+  const fetchOrders = async () => {
+    try {
+      const headers = await getAuthHeaders();
+      
+      const response = await fetch(`${BACKEND_URL}/api/orders`, {
+        headers: headers
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          toast.error("Authentication failed. Please login again.");
+          await supabase.auth.signOut();
+          navigate("/login");
+          return;
+        }
+        
+        const errorData = await response.json().catch(() => ({ message: 'Failed to fetch orders' }));
+        throw new Error(errorData.message || `Failed to fetch orders: ${response.status}`);
+      }
+      
+      const ordersData = await response.json();
+      setOrders(ordersData);
+    } catch (error) {
+      console.error("Error fetching orders:", error);
+      toast.error(error.message || "Failed to fetch orders");
+    }
+  };
+
+  const fetchDashboardStats = async () => {
+    try {
+      const headers = await getAuthHeaders();
+
+      const response = await fetch(`${BACKEND_URL}/api/dashboard/stats`, {
+        headers: headers
+      });
+
+      if (!response.ok) {
+        const fallbackStats = {
+          totalOrders: orders.length,
+          pendingOrders: orders.filter(o => o.status === 'pending').length,
+          completedOrders: orders.filter(o => o.status === 'completed').length,
+          totalRevenue: orders.reduce((sum, order) => sum + (order.total_amount || 0), 0),
+          totalProducts: products.length
+        };
+        setDashboardStats(fallbackStats);
+        return;
+      }
+      
+      const stats = await response.json();
+      setDashboardStats(stats);
+    } catch (error) {
+      console.error("Error fetching dashboard stats:", error);
+      const fallbackStats = {
+        totalOrders: orders.length,
+        pendingOrders: orders.filter(o => o.status === 'pending').length,
+        completedOrders: orders.filter(o => o.status === 'completed').length,
+        totalRevenue: orders.reduce((sum, order) => sum + (order.total_amount || 0), 0),
+        totalProducts: products.length
+      };
+      setDashboardStats(fallbackStats);
+    }
+  };
+
   const fetchProducts = async () => {
     try {
-      setLoading(true);
-      setError('');
+      const response = await fetch(`${BACKEND_URL}/api/products`);
       
-      console.log('Fetching products from:', `${API_BASE_URL}/products`);
-      
-      // Try with auth first
-      let data = await fetchWithAuth('/products');
-      
-      // If no data or error, try direct fetch without auth (since products are public)
-      if (!data || (data.message && !Array.isArray(data))) {
-        console.log('Trying direct fetch for products...');
-        const directResponse = await fetch(`${API_BASE_URL}/products`);
-        if (directResponse.ok) {
-          data = await directResponse.json();
-        }
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to fetch products' }));
+        throw new Error(errorData.message || `Failed to fetch products: ${response.status}`);
       }
       
-      setProducts(Array.isArray(data) ? data : []);
+      const productsData = await response.json();
       
-    } catch (error) {
-      console.error('Error fetching products:', error);
-      setError(`Failed to fetch products: ${error.message}`);
-      setProducts([]);
-      
-      // Final fallback: try direct fetch without any auth
-      try {
-        const fallbackResponse = await fetch(`${API_BASE_URL}/products`);
-        if (fallbackResponse.ok) {
-          const fallbackData = await fallbackResponse.json();
-          setProducts(Array.isArray(fallbackData) ? fallbackData : []);
-        }
-      } catch (fallbackError) {
-        console.error('Fallback also failed:', fallbackError);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Enhanced API connection test
-  const testApiConnection = async () => {
-    try {
-      setLoading(true);
-      console.log('Testing API connection to:', API_BASE_URL);
-      
-      const response = await fetch(`${API_BASE_URL}/health`);
-      console.log('Health check response status:', response.status);
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('API health check success:', data);
-        setMessage('API connection successful!');
-        return true;
-      } else {
-        const errorText = await response.text();
-        console.error('Health check failed with status:', response.status, errorText);
-        setError(`API health check failed: ${response.status}`);
-        return false;
-      }
-    } catch (error) {
-      console.error('API connection test failed:', error);
-      setError(`API connection failed: ${error.message}`);
-      return false;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const addToCart = useCallback((product) => {
-    if (!product.is_available) {
-      alert('This product is currently out of stock');
-      return;
-    }
-    
-    setCart(prev => {
-      const existing = prev.find(item => item.id === product.id);
-      if (existing) {
-        return prev.map(item => 
-          item.id === product.id 
-            ? { ...item, quantity: item.quantity + 1 } 
-            : item
-        );
-      }
-      return [...prev, { 
-        ...product, 
-        quantity: 1, 
+      const mappedProducts = productsData.map(product => ({
         id: product.id,
-        total_amount: product.total_amount || 0
-      }];
-    });
-    setShowCart(true);
-  }, []);
+        product_name: product.name || product.product_name,
+        name: product.name || product.product_name,
+        description: product.description,
+        price: product.price || product.total_amount,
+        total_amount: product.price || product.total_amount,
+        image_url: product.image_url,
+        is_available: product.is_available !== undefined ? product.is_available : true
+      }));
+      
+      setProducts(mappedProducts);
+    } catch (error) {
+      console.error("Error fetching products:", error);
+      toast.error(error.message || "Failed to fetch products");
+    }
+  };
 
-  const removeFromCart = useCallback((productId) => {
-    setCart(prev => prev.filter(item => item.id !== productId));
-  }, []);
+  const fetchOrderItems = async (orderId) => {
+    try {
+      const headers = await getAuthHeaders();
 
-  const updateQuantity = useCallback((productId, qty) => { 
-    if (qty < 1) {
-      removeFromCart(productId);
-      return;
-    } 
-    setCart(prev => prev.map(item => 
-      item.id === productId 
-        ? { ...item, quantity: qty } 
-        : item
-    ));
-  }, [removeFromCart]);
+      const response = await fetch(`${BACKEND_URL}/api/orders/${orderId}/items`, {
+        headers: headers
+      });
 
-  const calculateTotal = useCallback(() => {
-    return cart.reduce((total, item) => total + ((item.total_amount || 0) * item.quantity), 0);
-  }, [cart]);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to fetch order items' }));
+        throw new Error(errorData.message || 'Failed to fetch order items');
+      }
+      
+      const itemsData = await response.json();
+      setOrderItems(itemsData);
+      setSelectedOrder(orderId);
+      
+      if (isMobile) {
+        setSidebarOpen(false);
+      }
+    } catch (error) {
+      console.error("Error fetching order items:", error);
+      toast.error(error.message || "Failed to fetch order items");
+    }
+  };
 
-  const calculateItemCount = useCallback(() => {
-    return cart.reduce((count, item) => count + item.quantity, 0);
-  }, [cart]);
+  // FIXED: Enhanced updateOrderStatus function with proper error handling
+  const updateOrderStatus = async (orderId, newStatus) => {
+    try {
+      console.log(`Updating order ${orderId} to status: ${newStatus}`);
+      
+      const headers = await getAuthHeaders();
+      
+      if (!headers['user-id'] || !headers['user-email']) {
+        toast.error("Authentication failed. Please log in again.");
+        return;
+      }
 
-  // FIXED: Enhanced checkout with better error handling
-  const handleCheckout = useCallback(async (e) => {
+      const response = await fetch(`${BACKEND_URL}/api/orders/${orderId}`, {
+        method: 'PUT',
+        headers: headers,
+        body: JSON.stringify({ status: newStatus })
+      });
+
+      console.log('Update response status:', response.status);
+
+      if (!response.ok) {
+        let errorMessage = `Failed to update order status: ${response.status}`;
+        
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorMessage;
+          console.error('Server error details:', errorData);
+        } catch (parseError) {
+          const errorText = await response.text();
+          console.error('Raw error response:', errorText);
+          errorMessage = errorText || errorMessage;
+        }
+        
+        throw new Error(errorMessage);
+      }
+
+      // Parse successful response
+      const result = await response.json();
+      console.log('Update successful:', result);
+      
+      // Refresh orders and dashboard stats
+      await fetchOrders();
+      await fetchDashboardStats();
+      
+      toast.success(`Order status updated to ${newStatus}`);
+      setShowMobileActions(null);
+      
+    } catch (error) {
+      console.error("Error updating order status:", error);
+      
+      // More specific error messages
+      if (error.message.includes('Failed to fetch')) {
+        toast.error("Network error: Cannot connect to server. Please check your connection.");
+      } else if (error.message.includes('401') || error.message.includes('Authentication')) {
+        toast.error("Authentication failed. Please log in again.");
+        await supabase.auth.signOut();
+        navigate("/login");
+      } else if (error.message.includes('404')) {
+        toast.error("Order not found. It may have been deleted.");
+        await fetchOrders(); // Refresh to get current order list
+      } else {
+        toast.error(error.message || "Failed to update order status");
+      }
+    }
+  };
+
+  const saveProduct = async (e) => {
     e.preventDefault();
     
-    // Validation
-    if (!customerInfo.name?.trim() || !customerInfo.phone?.trim() || !customerInfo.address?.trim()) {
-      alert("Please fill in all required fields (name, phone, and address)");
+    if (!productForm.name || !productForm.description || !productForm.price) {
+      toast.error("Please fill in all required fields");
       return;
     }
 
-    if (cart.length === 0) {
-      alert("Your cart is empty");
-      return;
-    }
-
-    if (!user?.email) {
-      alert("User information is missing. Please log in again.");
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-    
     try {
-      const orderData = {
-        customer_name: customerInfo.name.trim(),
-        customer_phone: customerInfo.phone.trim(),
-        customer_address: customerInfo.address.trim(),
-        customer_email: user.email,
-        cart: cart.map(item => ({
-          id: item.id,
-          product_name: item.product_name,
-          quantity: item.quantity,
-          price: item.total_amount || 0,
-          total_amount: item.total_amount || 0
-        })),
-        total: calculateTotal(),
-        payment_method: selectedPayment,
-        status: 'pending'
+      const headers = await getAuthHeaders();
+      let imageUrl = productForm.image_url;
+
+      if (selectedFile) {
+        const uploadedUrl = await uploadImage(selectedFile);
+        if (uploadedUrl) {
+          imageUrl = uploadedUrl;
+        } else {
+          return;
+        }
+      }
+
+      const productData = {
+        name: productForm.name,
+        description: productForm.description,
+        price: parseFloat(productForm.price),
+        image_url: imageUrl,
+        is_available: productForm.is_available
       };
 
-      console.log('Submitting order:', orderData);
-      const data = await fetchWithAuth('/orders', {
-        method: 'POST',
-        body: JSON.stringify(orderData)
-      });
-
-      console.log('Order response:', data);
-
-      // Success handling
-      if (selectedPayment === 'momo') {
-        alert(`Order placed successfully!\n\nPayment Instructions:\nSend ${formatPrice(calculateTotal())} to MoMo: 0788295765\nAccount: TUYISENGE Gashugi Arnaud\nUse your name as reference`);
+      let response;
+      if (editingProduct) {
+        response = await fetch(`${BACKEND_URL}/api/products/${editingProduct}`, {
+          method: 'PUT',
+          headers: headers,
+          body: JSON.stringify(productData)
+        });
       } else {
-        alert('Order placed successfully! Pay with cash when your order arrives.');
+        response = await fetch(`${BACKEND_URL}/api/products`, {
+          method: 'POST',
+          headers: headers,
+          body: JSON.stringify(productData)
+        });
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ 
+          message: `Failed to ${editingProduct ? 'update' : 'create'} product` 
+        }));
+        throw new Error(errorData.message || `Failed to ${editingProduct ? 'update' : 'create'} product`);
       }
       
-      setOrderSuccess(true);
-      setCart([]);
-      setShowCheckout(false);
+      await response.json();
       
-      // Refresh orders after successful order
-      setTimeout(() => {
-        fetchUserOrders();
-      }, 1000);
+      await fetchProducts();
+      await fetchDashboardStats();
       
-      setTimeout(() => setOrderSuccess(false), 5000);
-
-    } catch (err) {
-      console.error("Checkout error:", err);
-      const errorMsg = `Failed to place order: ${err.message}`;
-      setError(errorMsg);
-      alert(errorMsg);
-    } finally {
-      setLoading(false);
-    }
-  }, [customerInfo, cart, calculateTotal, user, selectedPayment]);
-
-  const handleProfileUpdate = async (updatedUser) => {
-    try {
-      setUserProfile(updatedUser);
-      setShowEditProfile(false);
-      setMessage('Profile updated successfully (local storage only)!');
+      setShowProductModal(false);
+      resetProductForm();
       
-      setCustomerInfo(prev => ({
-        ...prev,
-        name: updatedUser.username,
-        phone: updatedUser.phone || "",
-        address: updatedUser.address || ""
-      }));
-
-      setTimeout(() => setMessage(''), 3000);
+      toast.success(`Product ${editingProduct ? 'updated' : 'added'} successfully`);
     } catch (error) {
-      setError('Failed to update profile: ' + error.message);
+      console.error("Error saving product:", error);
+      toast.error(error.message || `Failed to ${editingProduct ? 'update' : 'create'} product`);
     }
   };
 
-  const formatPrice = useCallback((price) => {
-    return new Intl.NumberFormat("rw-RW", { 
-      style: "currency", 
-      currency: "RWF" 
-    }).format(price || 0);
-  }, []);
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Unknown date';
+  const deleteProduct = async (productId) => {
+    if (!window.confirm("Are you sure you want to delete this product? This action cannot be undone.")) return;
+    
     try {
-      return new Date(dateString).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
+      const headers = await getAuthHeaders();
+
+      const response = await fetch(`${BACKEND_URL}/api/products/${productId}`, {
+        method: 'DELETE',
+        headers: headers
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to delete product' }));
+        throw new Error(errorData.message || 'Failed to delete product');
+      }
+      
+      await fetchProducts();
+      await fetchDashboardStats();
+      toast.success("Product deleted successfully");
+      setShowMobileActions(null);
     } catch (error) {
-      return 'Invalid date';
+      console.error("Error deleting product:", error);
+      toast.error(error.message || "Failed to delete product");
     }
   };
+
+  const updateCredentials = async (e) => {
+    e.preventDefault();
+    
+    if (profileData.newPassword) {
+      if (profileData.newPassword.length < 6) {
+        toast.error("Password must be at least 6 characters long");
+        return;
+      }
+      
+      if (profileData.newPassword !== profileData.confirmPassword) {
+        toast.error("New passwords don't match");
+        return;
+      }
+
+      if (!profileData.currentPassword) {
+        toast.error("Please enter your current password to change password");
+        return;
+      }
+    }
+
+    setUpdatingProfile(true);
+
+    try {
+      let updateData = {
+        email: profileData.email
+      };
+
+      if (profileData.newPassword) {
+        updateData.password = profileData.newPassword;
+      }
+
+      const { data: updatedUser, error } = await supabase.auth.updateUser(updateData);
+
+      if (error) throw error;
+
+      if (updatedUser && updatedUser.user) {
+        setUser(updatedUser.user);
+        toast.success("Profile updated successfully");
+        
+        setProfileData({
+          email: updatedUser.user.email,
+          currentPassword: "",
+          newPassword: "",
+          confirmPassword: "",
+          twoFactorEnabled: profileData.twoFactorEnabled
+        });
+        
+        setShowProfileModal(false);
+      }
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      toast.error(error.message || "Failed to update profile");
+    } finally {
+      setUpdatingProfile(false);
+    }
+  };
+
+  const startEditingProduct = (product) => {
+    setEditingProduct(product.id);
+    setProductForm({ 
+      name: product.name || product.product_name,
+      description: product.description,
+      price: product.price || product.total_amount,
+      image_url: product.image_url,
+      is_available: product.is_available !== undefined ? product.is_available : true
+    });
+    
+    if (product.image_url) {
+      setImagePreview(getImageUrl(product.image_url));
+    } else {
+      setImagePreview("");
+    }
+    
+    setSelectedFile(null);
+    setShowProductModal(true);
+    setShowMobileActions(null);
+  };
+
+  const startAddingProduct = () => {
+    setEditingProduct(null);
+    resetProductForm();
+    setShowProductModal(true);
+  };
+
+  const resetProductForm = () => {
+    setProductForm({
+      name: "",
+      description: "",
+      price: "",
+      image_url: "",
+      is_available: true
+    });
+    setImagePreview("");
+    setSelectedFile(null);
+  };
+
+  const closeProductModal = () => {
+    setShowProductModal(false);
+    setEditingProduct(null);
+    resetProductForm();
+  };
+
+  const closeProfileModal = () => {
+    setShowProfileModal(false);
+    setProfileData({
+      email: user?.email || "",
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+      twoFactorEnabled: false
+    });
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
+  };
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    toast.success("Logged out successfully")
+    navigate("/login");
+  };
+
+  const filteredOrders = orders.filter(order => {
+    const matchesSearch = order.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         order.customer_phone?.includes(searchTerm) ||
+                         order.customer_address?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === "all" || order.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
 
   const getStatusColor = (status) => {
-    const statusLower = status?.toLowerCase() || 'pending';
-    switch (statusLower) {
-      case 'completed': return 'bg-green-100 text-green-800';
-      case 'preparing': return 'bg-orange-100 text-orange-800';
-      case 'on the way': return 'bg-amber-100 text-amber-800';
-      case 'pending': return 'bg-yellow-100 text-yellow-800';
-      case 'cancelled': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
+    switch (status) {
+      case "pending": return "bg-yellow-100 text-yellow-800 border-yellow-200";
+      case "completed": return "bg-green-100 text-green-800 border-green-200";
+      case "cancelled": return "bg-red-100 text-red-800 border-red-200";
+      default: return "bg-gray-100 text-gray-800 border-gray-200";
     }
   };
 
-  const handleTrackOrder = useCallback((order) => {
-    setTrackingOrder(order);
-  }, []);
-
-  const closeTracking = useCallback(() => {
-    setTrackingOrder(null);
-  }, []);
-
-  // Effect to fetch data when tabs change - FIXED: Added dependencies
-  useEffect(() => {
-    if (activeTab === 'orders') {
-      fetchUserOrders();
-    } else if (activeTab === 'menu') {
-      fetchProducts();
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case "pending": return faClock;
+      case "completed": return faCheckCircle;
+      case "cancelled": return faTimesCircle;
+      default: return faBox;
     }
-  }, [activeTab, user]); // Added user as dependency
+  };
 
-  // Effect to update customer info when user changes
-  useEffect(() => {
-    if (user) {
-      setCustomerInfo({
-        name: user.username || "",
-        phone: user.phone || "",
-        address: user.address || ""
-      });
-      setUserProfile(user);
+  const formatDate = (dateString) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const formatCurrency = (amount) => {
+    if (!amount) return `FRW 0`;
+    
+    const convertedAmount = amount * exchangeRates[currency];
+    
+    switch (currency) {
+      case "FRW":
+        return `FRW ${Math.round(convertedAmount).toLocaleString()}`;
+      case "USD":
+        return `$${convertedAmount.toFixed(2)}`;
+      case "EUR":
+        return `€${convertedAmount.toFixed(2)}`;
+      default:
+        return `FRW ${Math.round(amount).toLocaleString()}`;
     }
-  }, [user]);
+  };
 
-  // Test API connection on component mount
-  useEffect(() => {
-    console.log('Using API URL:', API_BASE_URL);
-    console.log('Current user:', user);
-    testApiConnection();
-  }, []);
+  const getOrderStatusDistribution = () => {
+    const statusCounts = {
+      pending: 0,
+      completed: 0,
+      cancelled: 0
+    };
+    
+    orders.forEach(order => {
+      statusCounts[order.status] = (statusCounts[order.status] || 0) + 1;
+    });
+    
+    return statusCounts;
+  };
 
-  const cartSummary = useMemo(() => ({
-    itemCount: calculateItemCount(),
-    total: calculateTotal()
-  }), [calculateItemCount, calculateTotal]);
+  const statusDistribution = getOrderStatusDistribution();
 
-  // Redirect if no user
-  if (!user) {
-    window.location.href = '/userlogin';
-    return null;
-  }
+  const ProductImage = ({ src, alt, className = "w-full h-32 object-cover rounded-lg bg-gray-100" }) => {
+    const [imgSrc, setImgSrc] = useState(getImageUrl(src));
+    const [hasError, setHasError] = useState(false);
+
+    const handleError = () => {
+      setHasError(true);
+      setImgSrc("https://via.placeholder.com/300x200/FFA500/FFFFFF?text=No+Image");
+    };
+
+    const handleLoad = () => {
+      setHasError(false);
+    };
+
+    return (
+      <img
+        src={imgSrc}
+        alt={alt}
+        className={className}
+        onError={handleError}
+        onLoad={handleLoad}
+      />
+    );
+  };
+
+  const MobileOrderActions = ({ order, onClose }) => (
+    <div className="fixed inset-0 bg-black/50 z-40 flex items-end justify-center p-4 lg:hidden">
+      <div className="bg-white rounded-t-2xl w-full max-w-md shadow-2xl animate-slide-up">
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex justify-between items-center">
+            <h3 className="font-semibold text-gray-800">Order Actions</h3>
+            <button onClick={onClose} className="p-2">
+              <FontAwesomeIcon icon={faTimes} className="text-gray-500" />
+            </button>
+          </div>
+        </div>
+        <div className="p-4 space-y-2">
+          <button
+            onClick={() => {
+              updateOrderStatus(order.id, "completed");
+              onClose();
+            }}
+            className="w-full bg-green-500 text-white py-3 rounded-lg text-sm font-medium"
+          >
+            Mark as Completed
+          </button>
+          <button
+            onClick={() => {
+              updateOrderStatus(order.id, "pending");
+              onClose();
+            }}
+            className="w-full bg-yellow-500 text-white py-3 rounded-lg text-sm font-medium"
+          >
+            Mark as Pending
+          </button>
+          <button
+            onClick={() => {
+              updateOrderStatus(order.id, "cancelled");
+              onClose();
+            }}
+            className="w-full bg-red-500 text-white py-3 rounded-lg text-sm font-medium"
+          >
+            Cancel Order
+          </button>
+          <button
+            onClick={onClose}
+            className="w-full bg-gray-500 text-white py-3 rounded-lg text-sm font-medium mt-2"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const MobileProductActions = ({ product, onClose }) => (
+    <div className="fixed inset-0 bg-black/50 z-40 flex items-end justify-center p-4 lg:hidden">
+      <div className="bg-white rounded-t-2xl w-full max-w-md shadow-2xl animate-slide-up">
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex justify-between items-center">
+            <h3 className="font-semibold text-gray-800">Product Actions</h3>
+            <button onClick={onClose} className="p-2">
+              <FontAwesomeIcon icon={faTimes} className="text-gray-500" />
+            </button>
+          </div>
+        </div>
+        <div className="p-4 space-y-2">
+          <button
+            onClick={() => {
+              startEditingProduct(product);
+              onClose();
+            }}
+            className="w-full bg-orange-500 text-white py-3 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
+          >
+            <FontAwesomeIcon icon={faEdit} />
+            Edit Product
+          </button>
+          <button
+            onClick={() => {
+              deleteProduct(product.id);
+              onClose();
+            }}
+            className="w-full bg-red-500 text-white py-3 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
+          >
+            <FontAwesomeIcon icon={faTrash} />
+            Delete Product
+          </button>
+          <button
+            onClick={onClose}
+            className="w-full bg-gray-500 text-white py-3 rounded-lg text-sm font-medium mt-2"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
-      {/* Success Message */}
-      {orderSuccess && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-green-500 text-white px-6 py-4 rounded-xl shadow-2xl z-50 mx-4 text-base flex items-center space-x-3 animate-bounce">
-          <FontAwesomeIcon icon={faCheckCircle} />
-          <span>Order placed successfully!</span>
+    <div className="flex h-screen bg-gray-50">
+      {/* Sidebar */}
+      <div className={`
+        ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"} 
+        w-64 lg:w-20 xl:w-64 bg-white shadow-lg transition-all duration-300 flex flex-col fixed lg:relative h-full z-30
+      `}>
+        <div className="p-4 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            {(!isMobile || sidebarOpen) && (
+              <h1 className="text-xl font-bold text-orange-600 flex items-center gap-2">
+                <FontAwesomeIcon icon={faStore} />
+                <span className="hidden xl:inline">FastFood Admin</span>
+                <span className="xl:hidden">Admin</span>
+              </h1>
+            )}
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors lg:hidden"
+            >
+              <FontAwesomeIcon icon={sidebarOpen ? faTimes : faBars} className="text-gray-600" />
+            </button>
+          </div>
         </div>
-      )}
 
-      {/* Debug Info */}
-      <div className="fixed bottom-4 right-4 bg-blue-500 text-white p-2 rounded text-xs opacity-70">
-        User: {user?.username}
+        <nav className="flex-1 p-4">
+          {[
+            { id: "dashboard", icon: faHome, label: "Dashboard" },
+            { id: "orders", icon: faShoppingCart, label: "Orders" },
+            { id: "products", icon: faHamburger, label: "Products" },
+            { id: "reports", icon: faChartBar, label: "Reports" },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => {
+                setActiveTab(item.id);
+                if (isMobile) setSidebarOpen(false);
+              }}
+              className={`w-full flex items-center gap-3 p-3 rounded-lg mb-2 transition-all duration-200 ${
+                activeTab === item.id
+                  ? "bg-orange-500 text-white shadow-md"
+                  : "text-gray-600 hover:bg-orange-50 hover:text-orange-600"
+              }`}
+            >
+              <FontAwesomeIcon icon={item.icon} className="w-5 h-5 flex-shrink-0" />
+              {(!isMobile || sidebarOpen) && (
+                <span className="font-medium hidden xl:inline">{item.label}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        <div className="p-4 border-t border-gray-200">
+          <div className="flex items-center gap-3 p-3 text-gray-600 mb-2">
+            <FontAwesomeIcon icon={faUserShield} className="text-green-500 flex-shrink-0" />
+            {(!isMobile || sidebarOpen) && (
+              <div className="text-sm min-w-0 hidden xl:block">
+                <p className="font-medium truncate" title={user?.email}>
+                  {user?.email}
+                </p>
+                <p className="text-xs text-gray-500">Admin</p>
+              </div>
+            )}
+          </div>
+          
+          <button 
+            onClick={() => {
+              setShowProfileModal(true);
+              if (isMobile) setSidebarOpen(false);
+            }}
+            className="w-full flex items-center gap-3 p-3 text-gray-600 hover:bg-blue-50 hover:text-orange-600 rounded-lg transition-colors mb-2"
+          >
+            <FontAwesomeIcon icon={faCog} className="flex-shrink-0" />
+            {(!isMobile || sidebarOpen) && <span className="hidden xl:inline">Settings</span>}
+          </button>
+          
+          <button 
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 p-3 text-gray-600 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
+          >
+            <FontAwesomeIcon icon={faSignOutAlt} className="flex-shrink-0" />
+            {(!isMobile || sidebarOpen) && <span className="hidden xl:inline">Logout</span>}
+          </button>
+        </div>
       </div>
 
-      {/* Enhanced Header */}
-      <header className="bg-white shadow-2xl border-b border-gray-200 sticky top-0 z-40 backdrop-blur-sm bg-white/95">
-        <div className="container mx-auto px-4 sm:px-6 py-4">
-          <div className="flex items-center justify-between">
-            {/* Logo */}
-            <div className="flex items-center space-x-4">
-              <div className="bg-gradient-to-r from-orange-500 to-amber-500 p-3 rounded-2xl shadow-lg">
-                <FontAwesomeIcon icon={faHamburger} className="text-white text-2xl" />
-              </div>
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 bg-gradient-to-r from-orange-500 to-amber-500 bg-clip-text text-transparent">
-                  FastFood
-                </h1>
-                <p className="text-gray-600 text-sm">User Dashboard</p>
-              </div>
+      {/* Main Content */}
+      <div className="flex-1 overflow-auto lg:ml-0 min-w-0">
+        <div className="p-4 lg:p-6">
+          {/* Mobile Header */}
+          <div className="lg:hidden flex items-center justify-between mb-6 bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+            <button
+              onClick={() => setSidebarOpen(true)}
+              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            >
+              <FontAwesomeIcon icon={faBars} className="text-gray-600" />
+            </button>
+            <div className="text-center flex-1">
+              <h1 className="text-lg font-bold text-gray-800 capitalize">
+                {activeTab === "dashboard" && "Dashboard"}
+                {activeTab === "orders" && "Orders"}
+                {activeTab === "products" && "Products"}
+                {activeTab === "reports" && "Reports"}
+              </h1>
+              <p className="text-xs text-gray-600 truncate">{user?.email}</p>
             </div>
-            
-            {/* User Actions */}
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => setShowCart(true)}
-                className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white px-6 py-3 rounded-xl transition-all duration-300 relative flex items-center space-x-3 text-base font-semibold shadow-lg hover:shadow-xl transform hover:scale-105"
+            <div className="w-9"></div>
+          </div>
+
+          {/* Desktop Header */}
+          <div className="hidden lg:flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-800 capitalize">
+                {activeTab === "dashboard" && "Dashboard Overview"}
+                {activeTab === "orders" && "Order Management"}
+                {activeTab === "products" && "Product Management"}
+                {activeTab === "reports" && "Sales Reports"}
+              </h1>
+              <p className="text-gray-600">
+                Welcome back, <span className="font-semibold text-orange-600">{user?.email}</span>
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <select
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-sm"
               >
-                <FontAwesomeIcon icon={faShoppingCart} className="text-lg" />
-                <span>Cart ({cartSummary.itemCount})</span>
-                {cartSummary.itemCount > 0 && (
-                  <span className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 text-sm flex items-center justify-center animate-pulse">
-                    {cartSummary.itemCount}
-                  </span>
-                )}
-              </button>
+                <option value="FRW">FRW 🇷🇼</option>
+                <option value="USD">USD 🇺🇸</option>
+                <option value="EUR">EUR 🇪🇺</option>
+              </select>
               
-              {/* User Profile Dropdown */}
-              <div className="relative">
-                <button
-                  onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white px-6 py-3 rounded-xl transition-all duration-300 flex items-center space-x-3 text-base font-semibold shadow-lg hover:shadow-xl transform hover:scale-105"
-                >
-                  <FontAwesomeIcon icon={faUserCircle} className="text-xl" />
-                  <span className="max-w-32 truncate">{user.username}</span>
-                  <FontAwesomeIcon icon={faBars} className="text-sm" />
-                </button>
-                
-                {showUserMenu && (
-                  <div className="absolute right-0 mt-3 w-64 bg-white rounded-2xl shadow-2xl border border-gray-200 py-3 z-50 animate-in fade-in-80">
-                    <div className="px-5 py-4 border-b border-gray-200">
-                      <p className="font-bold text-gray-800 text-lg truncate">{user.username}</p>
-                      <p className="text-gray-600 text-sm truncate">{user.email}</p>
+              <button
+                onClick={fetchAllData}
+                disabled={loading}
+                className="flex items-center justify-center gap-2 bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors disabled:opacity-50 text-sm"
+              >
+                <FontAwesomeIcon icon={faRefresh} className={loading ? "animate-spin" : ""} />
+                <span>Refresh</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Dashboard Tab */}
+          {activeTab === "dashboard" && (
+            <div className="space-y-6">
+              {/* Stats Grid */}
+              <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-6">
+                {[
+                  {
+                    title: "Total Orders",
+                    value: dashboardStats.totalOrders,
+                    icon: faShoppingCart,
+                    color: "bg-blue-500",
+                    isCurrency: false,
+                    description: "All time orders"
+                  },
+                  {
+                    title: "Pending",
+                    value: dashboardStats.pendingOrders,
+                    icon: faClock,
+                    color: "bg-yellow-500",
+                    isCurrency: false,
+                    description: "Awaiting"
+                  },
+                  {
+                    title: "Completed",
+                    value: dashboardStats.completedOrders,
+                    icon: faCheckCircle,
+                    color: "bg-green-500",
+                    isCurrency: false,
+                    description: "Delivered"
+                  },
+                  {
+                    title: "Products",
+                    value: dashboardStats.totalProducts,
+                    icon: faHamburger,
+                    color: "bg-purple-500",
+                    isCurrency: false,
+                    description: "Active"
+                  },
+                ].map((stat, index) => (
+                  <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 lg:p-6 hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs lg:text-sm font-medium text-gray-600 truncate">{stat.title}</p>
+                        <p className="text-lg lg:text-2xl font-bold text-gray-800 mt-1">
+                          {stat.isCurrency ? formatCurrency(stat.value) : stat.value}{stat.suffix || ''}
+                        </p>
+                        <p className="text-xs text-gray-500 truncate">{stat.description}</p>
+                      </div>
+                      <div className={`${stat.color} w-8 h-8 lg:w-12 lg:h-12 rounded-full flex items-center justify-center flex-shrink-0 ml-2`}>
+                        <FontAwesomeIcon icon={stat.icon} className="text-white text-sm lg:text-lg" />
+                      </div>
                     </div>
-                    <button 
-                      onClick={() => {
-                        setShowUserMenu(false);
-                        setShowEditProfile(true);
-                      }}
-                      className="w-full text-left px-5 py-4 text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors flex items-center space-x-3 text-base border-b border-gray-100"
-                    >
-                      <FontAwesomeIcon icon={faUser} className="text-lg" />
-                      <span>Edit Profile</span>
-                    </button>
-                    <button 
-                      onClick={() => {
-                        setShowUserMenu(false);
-                        setActiveTab('orders');
-                      }}
-                      className="w-full text-left px-5 py-4 text-gray-700 hover:bg-orange-50 hover:text-orange-600 transition-colors flex items-center space-x-3 text-base border-b border-gray-100"
-                    >
-                      <FontAwesomeIcon icon={faHistory} className="text-lg" />
-                      <span>My Orders</span>
-                    </button>
-                    <div className="pt-2">
-                      <button 
-                        onClick={logout}
-                        className="w-full text-left px-5 py-4 text-red-600 hover:bg-red-50 transition-colors flex items-center space-x-3 text-base"
+                  </div>
+                ))}
+              </div>
+
+              {/* Additional Stats for larger screens */}
+              <div className="hidden sm:grid grid-cols-2 lg:grid-cols-3 gap-3 lg:gap-6">
+                {[
+                  {
+                    title: "Total Revenue",
+                    value: dashboardStats.totalRevenue,
+                    icon: faMoneyBillWave,
+                    color: "bg-indigo-500",
+                    isCurrency: true,
+                    description: "All time revenue"
+                  },
+                  {
+                    title: "Cancelled",
+                    value: dashboardStats.totalOrders - dashboardStats.pendingOrders - dashboardStats.completedOrders,
+                    icon: faTimesCircle,
+                    color: "bg-red-500",
+                    isCurrency: false,
+                    description: "Cancelled orders"
+                  },
+                  {
+                    title: "Success Rate",
+                    value: dashboardStats.totalOrders > 0 ? ((dashboardStats.completedOrders / dashboardStats.totalOrders) * 100).toFixed(1) : 0,
+                    icon: faChartBar,
+                    color: "bg-teal-500",
+                    isCurrency: false,
+                    suffix: "%",
+                    description: "Completion rate"
+                  }
+                ].map((stat, index) => (
+                  <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 lg:p-6 hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs lg:text-sm font-medium text-gray-600 truncate">{stat.title}</p>
+                        <p className="text-lg lg:text-2xl font-bold text-gray-800 mt-1">
+                          {stat.isCurrency ? formatCurrency(stat.value) : stat.value}{stat.suffix || ''}
+                        </p>
+                        <p className="text-xs text-gray-500 truncate">{stat.description}</p>
+                      </div>
+                      <div className={`${stat.color} w-8 h-8 lg:w-12 lg:h-12 rounded-full flex items-center justify-center flex-shrink-0 ml-2`}>
+                        <FontAwesomeIcon icon={stat.icon} className="text-white text-sm lg:text-lg" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Charts and Recent Data */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+                {/* Order Status Distribution */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 lg:p-6">
+                  <h2 className="text-base lg:text-lg font-semibold text-gray-800 mb-4">Order Status</h2>
+                  <div className="space-y-3 lg:space-y-4">
+                    {[
+                      { status: 'pending', count: statusDistribution.pending, color: 'bg-yellow-500', icon: faClock },
+                      { status: 'completed', count: statusDistribution.completed, color: 'bg-green-500', icon: faCheckCircle },
+                      { status: 'cancelled', count: statusDistribution.cancelled, color: 'bg-red-500', icon: faTimesCircle }
+                    ].map((item, index) => {
+                      const percentage = orders.length > 0 ? (item.count / orders.length * 100).toFixed(1) : 0;
+                      return (
+                        <div key={index} className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 lg:gap-3">
+                            <div className={`w-2 h-2 lg:w-3 lg:h-3 rounded-full ${item.color}`}></div>
+                            <FontAwesomeIcon icon={item.icon} className="text-gray-400 w-3 lg:w-4" />
+                            <span className="font-medium text-gray-700 text-sm capitalize">{item.status}</span>
+                          </div>
+                          <div className="flex items-center gap-2 lg:gap-3">
+                            <span className="text-xs lg:text-sm text-gray-600">{item.count} orders</span>
+                            <span className="text-xs lg:text-sm font-semibold text-gray-800">{percentage}%</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Recent Orders */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+                  <div className="p-4 lg:p-6 border-b border-gray-200">
+                    <div className="flex justify-between items-center">
+                      <h2 className="text-base lg:text-lg font-semibold text-gray-800">Recent Orders</h2>
+                      <button
+                        onClick={() => setActiveTab("orders")}
+                        className="text-orange-600 hover:text-orange-700 font-medium text-xs lg:text-sm"
                       >
-                        <FontAwesomeIcon icon={faSignOutAlt} className="text-lg" />
-                        <span>Logout</span>
+                        View All
                       </button>
                     </div>
                   </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Enhanced Welcome Section */}
-      <section className="bg-gradient-to-r from-orange-500 to-amber-500 text-white py-12 sm:py-16 lg:py-20">
-        <div className="container mx-auto px-4 sm:px-6">
-          <div className="text-center max-w-4xl mx-auto">
-            <h2 className="text-4xl sm:text-5xl lg:text-6xl font-bold mb-6 sm:mb-8 animate-pulse">
-              Welcome back, {user.username}! 👋
-            </h2>
-            <p className="text-orange-100 text-xl sm:text-2xl lg:text-3xl mb-8 sm:mb-12 leading-relaxed">
-              Ready to explore our delicious menu? Order now and get your favorite food delivered fast!
-            </p>
-            
-            {/* Enhanced Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
-              <StatsCard
-                icon={faShoppingCart}
-                title="Total Orders"
-                value={orders.length}
-                color="bg-blue-500"
-              />
-              <StatsCard
-                icon={faCheckCircle}
-                title="Completed"
-                value={orders.filter(order => order.status === 'completed').length}
-                color="bg-green-500"
-              />
-              <StatsCard
-                icon={faDollarSign}
-                title="Total Spent"
-                value={formatPrice(orders.reduce((sum, order) => sum + (order.total || 0), 0))}
-                color="bg-amber-500"
-              />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Enhanced Navigation Tabs */}
-      <div className="bg-white shadow-2xl border-b border-gray-200 sticky top-[84px] z-30 backdrop-blur-sm bg-white/95">
-        <div className="container mx-auto px-4 sm:px-6">
-          <nav className="flex space-x-1 sm:space-x-2 overflow-x-auto py-4 hide-scrollbar">
-            {[
-              { id: 'menu', name: 'Our Menu', icon: faShoppingCart },
-              { id: 'orders', name: 'My Orders', icon: faHistory },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center space-x-3 py-4 px-6 border-b-2 font-bold text-base whitespace-nowrap transition-all duration-300 min-w-max rounded-t-lg ${
-                  activeTab === tab.id
-                    ? 'border-orange-500 text-orange-600 bg-orange-50 shadow-inner'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                <FontAwesomeIcon icon={tab.icon} className="text-lg" />
-                <span>{tab.name}</span>
-                {tab.id === 'orders' && orders.length > 0 && (
-                  <span className="bg-orange-500 text-white rounded-full w-6 h-6 text-sm flex items-center justify-center">
-                    {orders.length}
-                  </span>
-                )}
-              </button>
-            ))}
-          </nav>
-        </div>
-      </div>
-
-      {/* Enhanced Main Content */}
-      <main className="container mx-auto px-4 sm:px-6 py-8 sm:py-12">
-        {/* Enhanced Error Message */}
-        {error && (
-          <div className="mb-6 bg-red-100 border border-red-400 text-red-700 px-6 py-4 rounded-xl flex items-center animate-shake">
-            <FontAwesomeIcon icon={faExclamationTriangle} className="mr-4 text-xl flex-shrink-0" />
-            <span className="flex-1 text-base">{error}</span>
-            <button 
-              onClick={() => setError('')}
-              className="ml-4 text-red-500 hover:text-red-700 p-2 rounded-full hover:bg-red-50 transition-colors flex-shrink-0"
-            >
-              <FontAwesomeIcon icon={faTimes} className="text-xl" />
-            </button>
-          </div>
-        )}
-
-        {/* Enhanced Success Message */}
-        {message && (
-          <div className="mb-6 bg-green-100 border border-green-400 text-green-700 px-6 py-4 rounded-xl animate-fade-in">
-            <div className="flex items-center">
-              <FontAwesomeIcon icon={faCheckCircle} className="mr-4 text-xl flex-shrink-0" />
-              <span className="text-base">{message}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Connection Troubleshooting */}
-        {error && error.includes('Cannot connect to server') && (
-          <div className="mb-6 bg-yellow-100 border border-yellow-400 text-yellow-700 px-6 py-4 rounded-xl">
-            <h4 className="font-bold mb-2">Connection Issue</h4>
-            <p className="mb-2">Unable to connect to the server. Please check:</p>
-            <ul className="list-disc list-inside text-sm space-y-1 mb-3">
-              <li>Your internet connection</li>
-              <li>If the backend server is running</li>
-              <li>Browser console for detailed errors</li>
-            </ul>
-            <button 
-              onClick={testApiConnection}
-              className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded text-sm"
-            >
-              Test Connection Again
-            </button>
-          </div>
-        )}
-
-        {/* Enhanced Menu Tab */}
-        {activeTab === 'menu' && (
-          <div className="space-y-8 sm:space-y-12">
-            <div className="text-center">
-              <h2 className="text-4xl sm:text-5xl font-bold text-gray-800 bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent mb-4">
-                Our Delicious Menu
-              </h2>
-              <p className="text-gray-600 text-xl max-w-2xl mx-auto">
-                Discover our mouth-watering selection of freshly prepared meals
-              </p>
-            </div>
-
-            {loading ? (
-              <div className="text-center py-16 sm:py-24 bg-white rounded-2xl border border-gray-200 shadow-lg">
-                <FontAwesomeIcon icon={faSpinner} className="animate-spin text-5xl sm:text-6xl text-orange-600 mb-6" />
-                <p className="text-gray-600 text-xl sm:text-2xl">Loading menu...</p>
-              </div>
-            ) : products.length === 0 ? (
-              <div className="text-center py-16 sm:py-24 bg-white rounded-2xl border border-gray-200 shadow-lg">
-                <FontAwesomeIcon icon={faBox} className="text-6xl sm:text-7xl text-gray-300 mb-6" />
-                <h4 className="text-2xl sm:text-3xl font-semibold text-gray-600 mb-4">
-                  {error ? 'Failed to load products' : 'No products available'}
-                </h4>
-                <p className="text-gray-500 text-lg sm:text-xl mb-8">
-                  {error ? 'Please check your connection and try again' : 'Please check back later or contact support.'}
-                </p>
-                <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                  <button 
-                    onClick={fetchProducts}
-                    className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white px-8 py-4 rounded-xl transition-all duration-300 text-lg shadow-lg hover:shadow-xl transform hover:scale-105"
-                  >
-                    Retry Loading Products
-                  </button>
-                  <button 
-                    onClick={testApiConnection}
-                    className="bg-gray-500 hover:bg-gray-600 text-white px-8 py-4 rounded-xl transition-all duration-300 text-lg shadow-lg hover:shadow-xl transform hover:scale-105"
-                  >
-                    Test Connection
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 sm:gap-8">
-                {products.map((product) => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    onAddToCart={addToCart}
-                  />
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Enhanced Orders Tab */}
-        {activeTab === 'orders' && (
-          <div className="space-y-8 sm:space-y-12">
-            <div className="flex flex-col lg:flex-row justify-between items-center gap-4">
-              <div className="text-center lg:text-left">
-                <h2 className="text-4xl sm:text-5xl font-bold text-gray-800 bg-gradient-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent mb-2">
-                  My Orders
-                </h2>
-                <p className="text-gray-600 text-xl">Track your order history and status</p>
-              </div>
-              <button 
-                onClick={fetchUserOrders}
-                disabled={loading}
-                className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white px-8 py-4 rounded-xl transition-all duration-300 text-base disabled:opacity-50 flex items-center space-x-3 w-full lg:w-auto justify-center shadow-lg hover:shadow-xl transform hover:scale-105"
-              >
-                <FontAwesomeIcon icon={faSpinner} className={loading ? 'animate-spin' : 'hidden'} />
-                <span>Refresh Orders</span>
-              </button>
-            </div>
-            
-            {loading ? (
-              <div className="text-center py-16 sm:py-24 bg-white rounded-2xl border border-gray-200 shadow-lg">
-                <FontAwesomeIcon icon={faSpinner} className="animate-spin text-5xl sm:text-6xl text-orange-600 mb-6" />
-                <p className="text-gray-600 text-xl sm:text-2xl">Loading your orders...</p>
-              </div>
-            ) : orders.length === 0 ? (
-              <div className="text-center py-16 sm:py-24 bg-white rounded-2xl border border-gray-200 shadow-lg">
-                <FontAwesomeIcon icon={faBox} className="text-6xl sm:text-7xl text-gray-300 mb-6" />
-                <h4 className="text-2xl sm:text-3xl font-semibold text-gray-600 mb-4">
-                  {error ? 'Failed to load orders' : 'No orders yet'}
-                </h4>
-                <p className="text-gray-500 text-lg sm:text-xl mb-8">
-                  {error ? 'Please check your connection and try again' : 'Start shopping to see your orders here!'}
-                </p>
-                <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                  {!error && (
-                    <button 
-                      onClick={() => setActiveTab('menu')}
-                      className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white px-8 py-4 rounded-xl transition-all duration-300 text-lg shadow-lg hover:shadow-xl transform hover:scale-105"
-                    >
-                      Browse Menu
-                    </button>
-                  )}
-                  <button 
-                    onClick={fetchUserOrders}
-                    className="bg-gray-500 hover:bg-gray-600 text-white px-8 py-4 rounded-xl transition-all duration-300 text-lg shadow-lg hover:shadow-xl transform hover:scale-105"
-                  >
-                    Retry Loading Orders
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-6 sm:space-y-8">
-                {orders.map((order) => (
-                  <div key={order.id} className="bg-white rounded-2xl border border-gray-200 p-6 sm:p-8 shadow-lg hover:shadow-xl transition-shadow duration-300">
-                    <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between mb-6">
-                      <div className="flex items-center space-x-4 mb-4 lg:mb-0">
-                        <div className="bg-gradient-to-r from-orange-500 to-amber-500 text-white p-4 rounded-2xl shadow-lg">
-                          <FontAwesomeIcon icon={faShoppingCart} className="text-xl" />
-                        </div>
-                        <div>
-                          <p className="text-gray-600 text-sm">
-                            {formatDate(order.created_at)}
-                          </p>
-                          <p className="font-bold text-gray-800 text-xl">
-                            Total: {formatPrice(order.total)}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        <span className={`px-4 py-2 rounded-full text-sm font-bold ${getStatusColor(order.status)}`}>
-                          {order.status || 'Pending'}
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <div className="border-t border-gray-200 pt-6">
-                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 sm:gap-8">
-                        <div>
-                          <h5 className="font-bold text-gray-700 mb-4 text-xl flex items-center">
-                            <FontAwesomeIcon icon={faBox} className="text-orange-500 mr-3 text-xl" />
-                            Order Items:
-                          </h5>
-                          <div className="space-y-3">
-                            {order.cart?.map((item, index) => (
-                              <div key={index} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-200">
-                                <div className="flex-1">
-                                  <p className="font-semibold text-gray-800 text-base">{item.product_name}</p>
-                                  <p className="text-gray-600 text-sm">Qty: {item.quantity}</p>
-                                </div>
-                                <span className="font-bold text-green-600 text-base">
-                                  {formatPrice((item.total_amount || item.price || 0) * item.quantity)}
-                                </span>
-                              </div>
-                            ))}
+                  <div className="max-h-64 lg:max-h-96 overflow-y-auto">
+                    {orders.slice(0, 5).map((order) => (
+                      <div key={order.id} className="p-3 lg:p-4 border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer"
+                           onClick={() => fetchOrderItems(order.id)}>
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1 lg:gap-2 mb-1">
+                              <FontAwesomeIcon icon={faUserCircle} className="text-gray-400 text-xs lg:text-sm" />
+                              <p className="font-semibold text-gray-800 text-sm lg:text-base truncate">{order.customer_name}</p>
+                            </div>
+                            <p className="text-xs text-gray-600 truncate">{order.customer_phone}</p>
+                            <p className="text-xs text-gray-500 mt-1 truncate">{formatDate(order.created_at)}</p>
                           </div>
-                        </div>
-                        <div>
-                          <h5 className="font-bold text-gray-700 mb-4 text-xl flex items-center">
-                            <FontAwesomeIcon icon={faMapMarkerAlt} className="text-orange-500 mr-3 text-xl" />
-                            Delivery Information:
-                          </h5>
-                          <div className="space-y-2 text-base bg-orange-50 p-4 sm:p-6 rounded-xl border border-orange-200">
-                            <p><strong>Name:</strong> {order.customer_name}</p>
-                            <p><strong>Phone:</strong> {order.customer_phone}</p>
-                            <p><strong>Address:</strong> {order.customer_address}</p>
-                            <p><strong>Payment:</strong> <span className="capitalize"> {formatPrice(order.total)}</span></p>
+                          <div className="flex flex-col items-end gap-1 lg:gap-2 ml-2 lg:ml-4">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(order.status)}`}>
+                              {order.status}
+                            </span>
+                            <span className="font-bold text-orange-600 text-sm lg:text-base">
+                              {formatCurrency(order.total_amount)}
+                            </span>
                           </div>
                         </div>
                       </div>
-                      
-                      <div className="border-t border-gray-200 mt-6 pt-6 flex flex-col sm:flex-row justify-between items-center gap-4">
-                        <span className="font-bold text-gray-800 text-2xl">
-                          Total: {formatPrice(order.total)}
-                        </span>
-                        <button 
-                          onClick={() => handleTrackOrder(order)}
-                          className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white px-6 py-3 rounded-xl transition-all duration-300 text-base flex items-center space-x-3 w-full sm:w-auto justify-center shadow-lg hover:shadow-xl transform hover:scale-105"
-                        >
-                          <FontAwesomeIcon icon={faEye} className="text-base" />
-                          <span>Track Order</span>
-                        </button>
+                    ))}
+                    {orders.length === 0 && (
+                      <div className="p-6 lg:p-8 text-center text-gray-500">
+                        <FontAwesomeIcon icon={faShoppingCart} className="text-3xl lg:text-4xl mb-2 lg:mb-3 text-gray-300" />
+                        <p className="text-sm lg:text-base">No orders found</p>
                       </div>
-                    </div>
+                    )}
                   </div>
-                ))}
+                </div>
               </div>
-            )}
-          </div>
-        )}
-      </main>
 
-      {/* Enhanced Cart Modal */}
-      {showCart && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
-          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl border border-gray-200 flex flex-col animate-slide-up">
-            <div className="bg-gradient-to-r from-orange-500 to-amber-500 p-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-bold text-white">Your Cart</h2>
-                <button 
-                  onClick={() => setShowCart(false)}
-                  className="text-white hover:text-orange-200 p-2 rounded-full hover:bg-white/20 transition-colors duration-200"
-                >
-                  <FontAwesomeIcon icon={faTimes} className="text-xl" />
-                </button>
-              </div>
-              {cartSummary.itemCount > 0 && (
-                <p className="text-orange-100 mt-2 text-lg">
-                  {cartSummary.itemCount} item{cartSummary.itemCount !== 1 ? 's' : ''} • Total: {formatPrice(cartSummary.total)}
-                </p>
-              )}
-            </div>
-            
-            <div className="p-6 max-h-96 overflow-y-auto flex-1">
-              {cart.length === 0 ? (
-                <div className="text-center py-12">
-                  <div className="text-gray-400 text-6xl mb-6">🛒</div>
-                  <p className="text-gray-500 text-xl mb-6">Your cart is empty</p>
-                  <button 
-                    onClick={() => setShowCart(false)}
-                    className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white px-8 py-4 rounded-xl transition-all duration-300 text-lg font-semibold w-full shadow-lg hover:shadow-xl transform hover:scale-105"
+              {/* Quick Actions */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 lg:p-6">
+                <h2 className="text-base lg:text-lg font-semibold text-gray-800 mb-4">Quick Actions</h2>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+                  <button
+                    onClick={() => setActiveTab("orders")}
+                    className="p-3 border border-gray-200 rounded-lg hover:border-orange-500 hover:bg-orange-50 transition-colors text-left"
                   >
-                    Continue Shopping
+                    <FontAwesomeIcon icon={faList} className="text-orange-500 text-lg lg:text-xl mb-2" />
+                    <p className="font-semibold text-gray-800 text-sm">Manage Orders</p>
+                    <p className="text-xs text-gray-600">View and process</p>
                   </button>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {cart.map(item => (
-                    <CartItem
-                      key={item.id}
-                      item={item}
-                      onUpdateQuantity={updateQuantity}
-                      onRemove={removeFromCart}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            {cart.length > 0 && (
-              <div className="border-t border-gray-200 p-6 bg-gray-50">
-                <div className="flex justify-between items-center text-2xl mb-6">
-                  <span className="font-bold text-gray-800">Total Amount:</span>
-                  <span className="font-bold text-green-600 text-3xl">
-                    {formatPrice(cartSummary.total)}
-                  </span>
-                </div>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <button 
-                    onClick={() => setShowCart(false)}
-                    className="bg-gray-500 hover:bg-gray-600 text-white py-4 rounded-xl transition-all duration-300 font-semibold text-base shadow-lg hover:shadow-xl transform hover:scale-105"
-                  >
-                    Continue Shopping
-                  </button>
-                  <button 
-                    onClick={() => {
-                      setShowCart(false);
-                      setShowCheckout(true);
-                    }}
-                    className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white py-4 rounded-xl transition-all duration-300 font-bold flex items-center justify-center space-x-3 text-base shadow-lg hover:shadow-xl transform hover:scale-105"
-                  >
-                    <FontAwesomeIcon icon={faCreditCard} className="text-xl" />
-                    <span>Checkout</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Enhanced Checkout Modal */}
-      {showCheckout && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
-          <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl border border-gray-200 flex flex-col animate-slide-up">
-            <div className="border-b border-gray-200 p-6 bg-white">
-              <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-bold text-gray-800">Complete Your Order</h2>
-                <button 
-                  onClick={() => setShowCheckout(false)}
-                  className="text-gray-500 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100 transition-colors duration-200"
-                >
-                  <FontAwesomeIcon icon={faTimes} className="text-xl" />
-                </button>
-              </div>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-6">
-              <form onSubmit={handleCheckout} className="space-y-6">
-                {/* Customer Information */}
-                <div className="bg-orange-50 rounded-2xl p-6 border border-orange-200">
-                  <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center">
-                    <FontAwesomeIcon icon={faUser} className="text-orange-500 mr-4 text-xl" />
-                    Customer Information
-                  </h3>
                   
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-base font-semibold text-gray-700 mb-3">
-                        Full Name *
-                      </label>
+                  <button
+                    onClick={() => setActiveTab("products")}
+                    className="p-3 border border-gray-200 rounded-lg hover:border-green-500 hover:bg-green-50 transition-colors text-left"
+                  >
+                    <FontAwesomeIcon icon={faHamburger} className="text-green-500 text-lg lg:text-xl mb-2" />
+                    <p className="font-semibold text-gray-800 text-sm">Products</p>
+                    <p className="text-xs text-gray-600">Add or edit</p>
+                  </button>
+                  
+                  <button
+                    onClick={startAddingProduct}
+                    className="p-3 border border-gray-200 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-colors text-left"
+                  >
+                    <FontAwesomeIcon icon={faPlus} className="text-orange-500 text-lg lg:text-xl mb-2" />
+                    <p className="font-semibold text-gray-800 text-sm">Add Product</p>
+                    <p className="text-xs text-gray-600">Create new</p>
+                  </button>
+                  
+                  <button
+                    onClick={() => setActiveTab("reports")}
+                    className="p-3 border border-gray-200 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-colors text-left"
+                  >
+                    <FontAwesomeIcon icon={faChartBar} className="text-purple-500 text-lg lg:text-xl mb-2" />
+                    <p className="font-semibold text-gray-800 text-sm">Reports</p>
+                    <p className="text-xs text-gray-600">Analytics</p>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Orders Tab */}
+          {activeTab === "orders" && (
+            <div className="space-y-4 lg:space-y-6">
+              {/* Filters */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 lg:p-6">
+                <div className="flex flex-col lg:flex-row gap-3 lg:gap-4">
+                  <div className="flex-1">
+                    <div className="relative">
+                      <FontAwesomeIcon icon={faSearch} className="absolute left-3 top-3 text-gray-400 text-sm" />
                       <input
                         type="text"
-                        required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-base"
-                        value={customerInfo.name}
-                        onChange={(e) => setCustomerInfo({...customerInfo, name: e.target.value})}
-                        placeholder="Enter your full name"
+                        placeholder="Search orders..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm"
                       />
                     </div>
-                    
-                    <div>
-                      <label className="block text-base font-semibold text-gray-700 mb-3">
-                        Phone Number *
-                      </label>
-                      <input
-                        type="tel"
-                        required
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-base"
-                        value={customerInfo.phone}
-                        onChange={(e) => setCustomerInfo({...customerInfo, phone: e.target.value})}
-                        placeholder="Enter your phone number"
-                      />
+                  </div>
+                  <div className="flex gap-2">
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 text-sm flex-1"
+                    >
+                      <option value="all">All Status</option>
+                      <option value="pending">Pending</option>
+                      <option value="completed">Completed</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Orders Grid */}
+              <div className="grid xl:grid-cols-2 gap-4 lg:gap-6">
+                {/* Orders List */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+                  <div className="p-4 lg:p-6 border-b border-gray-200">
+                    <h2 className="font-semibold text-gray-800 text-sm lg:text-base">All Orders ({filteredOrders.length})</h2>
+                  </div>
+                  <div className="max-h-[500px] lg:max-h-[600px] overflow-y-auto">
+                    {loading ? (
+                      <div className="p-6 lg:p-8 text-center">
+                        <div className="inline-block animate-spin rounded-full h-6 w-6 lg:h-8 lg:w-8 border-b-2 border-orange-600"></div>
+                        <p className="mt-2 text-gray-600 text-sm">Loading orders...</p>
+                      </div>
+                    ) : filteredOrders.length > 0 ? (
+                      filteredOrders.map((order) => (
+                        <div
+                          key={order.id}
+                          className={`p-3 lg:p-4 border-b border-gray-100 cursor-pointer transition-colors ${
+                            selectedOrder === order.id ? "bg-orange-50" : "hover:bg-gray-50"
+                          }`}
+                          onClick={() => fetchOrderItems(order.id)}
+                        >
+                          <div className="flex justify-between items-start mb-2 lg:mb-3">
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-gray-800 text-sm lg:text-base truncate">{order.customer_name}</p>
+                              <p className="text-xs text-gray-600 truncate">{order.customer_phone}</p>
+                              <p className="text-xs text-gray-500 mt-1 truncate">{order.customer_address}</p>
+                              <p className="text-xs text-gray-400 mt-1">{formatDate(order.created_at)}</p>
+                            </div>
+                            <div className="text-right ml-2 lg:ml-4">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(order.status)}`}>
+                                <FontAwesomeIcon icon={getStatusIcon(order.status)} className="mr-1" />
+                                {order.status}
+                              </span>
+                              <p className="text-orange-600 font-bold text-base lg:text-lg mt-1">
+                                {formatCurrency(order.total_amount)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-1 lg:gap-2 flex-wrap">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (isMobile) {
+                                  setShowMobileActions({ type: 'order', data: order });
+                                } else {
+                                  updateOrderStatus(order.id, "completed");
+                                }
+                              }}
+                              className="flex-1 min-w-[60px] lg:min-w-[80px] bg-green-500 text-white py-1 lg:py-2 px-2 rounded text-xs lg:text-sm hover:bg-green-600 transition-colors"
+                            >
+                              {isMobile ? 'Complete' : 'Complete'}
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (isMobile) {
+                                  setShowMobileActions({ type: 'order', data: order });
+                                } else {
+                                  updateOrderStatus(order.id, "pending");
+                                }
+                              }}
+                              className="flex-1 min-w-[60px] lg:min-w-[80px] bg-yellow-500 text-white py-1 lg:py-2 px-2 rounded text-xs lg:text-sm hover:bg-yellow-600 transition-colors"
+                            >
+                              {isMobile ? 'Pending' : 'Pending'}
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (isMobile) {
+                                  setShowMobileActions({ type: 'order', data: order });
+                                } else {
+                                  updateOrderStatus(order.id, "cancelled");
+                                }
+                              }}
+                              className="flex-1 min-w-[60px] lg:min-w-[80px] bg-red-500 text-white py-1 lg:py-2 px-2 rounded text-xs lg:text-sm hover:bg-red-600 transition-colors"
+                            >
+                              {isMobile ? 'Cancel' : 'Cancel'}
+                            </button>
+                            {isMobile && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setShowMobileActions({ type: 'order', data: order });
+                                }}
+                                className="px-3 bg-gray-500 text-white py-1 lg:py-2 rounded text-xs lg:text-sm hover:bg-gray-600 transition-colors"
+                              >
+                                <FontAwesomeIcon icon={faEllipsisV} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-6 lg:p-8 text-center text-gray-500">
+                        <FontAwesomeIcon icon={faShoppingCart} className="text-3xl lg:text-4xl mb-2 lg:mb-3 text-gray-300" />
+                        <p className="text-sm lg:text-base">No orders found</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Order Details */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+                  <div className="p-4 lg:p-6 border-b border-gray-200">
+                    <h2 className="font-semibold text-gray-800 text-sm lg:text-base">Order Details</h2>
+                  </div>
+                  <div className="p-3 lg:p-6">
+                    {selectedOrder ? (
+                      orderItems.length > 0 ? (
+                        <div className="space-y-3 lg:space-y-4">
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 lg:p-4">
+                            <h3 className="font-semibold text-orange-800 text-sm lg:text-base mb-2">Customer Information</h3>
+                            {orders.find(o => o.id === selectedOrder) && (
+                              <div className="space-y-1 text-xs lg:text-sm">
+                                <p><strong>Name:</strong> {orders.find(o => o.id === selectedOrder).customer_name}</p>
+                                <p><strong>Phone:</strong> {orders.find(o => o.id === selectedOrder).customer_phone}</p>
+                                <p><strong>Address:</strong> {orders.find(o => o.id === selectedOrder).customer_address}</p>
+                                <p><strong>Order Date:</strong> {formatDate(orders.find(o => o.id === selectedOrder).created_at)}</p>
+                                <p><strong>Status:</strong> 
+                                  <span className={`ml-2 px-2 py-1 rounded text-xs ${getStatusColor(orders.find(o => o.id === selectedOrder).status)}`}>
+                                    {orders.find(o => o.id === selectedOrder).status}
+                                  </span>
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                          
+                          <h3 className="font-semibold text-gray-800 text-sm lg:text-base">Order Items</h3>
+                          {orderItems.map((item) => (
+                            <div key={item.id} className="flex items-center gap-3 p-2 lg:p-3 border border-gray-200 rounded-lg">
+                              <ProductImage
+                                src={item.image_url}
+                                alt={item.product_name}
+                                className="w-12 h-12 lg:w-16 lg:h-16 object-cover rounded-lg flex-shrink-0 bg-gray-100"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-semibold text-gray-800 text-sm lg:text-base truncate">{item.product_name}</p>
+                                <p className="text-xs text-gray-600 line-clamp-2">{item.description}</p>
+                                <p className="text-xs text-gray-600 mt-1">
+                                  {item.quantity} × {formatCurrency(item.unit_price)}
+                                </p>
+                                <p className="text-orange-600 font-bold text-sm lg:text-base mt-1">
+                                  {formatCurrency(item.total_amount)}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                          <div className="mt-3 lg:mt-4 p-3 lg:p-4 bg-gray-50 rounded-lg border border-gray-200">
+                            <div className="flex justify-between items-center font-semibold text-gray-800 text-sm lg:text-base">
+                              <span>Order Total:</span>
+                              <span className="text-base lg:text-lg text-orange-600">
+                                {formatCurrency(orderItems.reduce((sum, item) => sum + (item.total_amount || 0), 0))}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-center text-gray-500 py-6 lg:py-8">
+                          <FontAwesomeIcon icon={faBox} className="text-3xl lg:text-4xl mb-2 lg:mb-3 text-gray-300" />
+                          <p className="text-sm lg:text-base">No items found for this order</p>
+                        </div>
+                      )
+                    ) : (
+                      <div className="text-center text-gray-500 py-6 lg:py-8">
+                        <FontAwesomeIcon icon={faEye} className="text-3xl lg:text-4xl mb-2 lg:mb-3 text-gray-300" />
+                        <p className="text-sm lg:text-base">Select an order to view details</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Products Tab */}
+          {activeTab === "products" && (
+            <div className="space-y-4 lg:space-y-6">
+              {/* Products Header */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 lg:p-6">
+                <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-3 lg:gap-4">
+                  <div>
+                    <h2 className="font-semibold text-gray-800 text-sm lg:text-base">Product Management</h2>
+                    <p className="text-xs lg:text-sm text-gray-600">{products.length} products</p>
+                  </div>
+                  <button
+                    onClick={startAddingProduct}
+                    className="bg-orange-500 text-white px-3 lg:px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors flex items-center gap-2 text-sm lg:text-base"
+                  >
+                    <FontAwesomeIcon icon={faPlus} />
+                    <span>Add Product</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Products Grid */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+                <div className="p-3 lg:p-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 lg:gap-6">
+                    {products.map((product) => (
+                      <div key={product.id} className="border border-gray-200 rounded-lg p-3 lg:p-4 hover:shadow-md transition-shadow">
+                        <div className="relative">
+                          <ProductImage
+                            src={product.image_url}
+                            alt={product.product_name}
+                            className="w-full h-24 lg:h-32 object-cover rounded-lg mb-2 lg:mb-3 bg-gray-100"
+                          />
+                          {!product.image_url && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-gray-100 rounded-lg">
+                              <FontAwesomeIcon icon={faImage} className="text-gray-400 text-xl lg:text-2xl" />
+                            </div>
+                          )}
+                          {isMobile && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setShowMobileActions({ type: 'product', data: product });
+                              }}
+                              className="absolute top-2 right-2 bg-black/50 text-white p-1 rounded-full w-6 h-6 flex items-center justify-center"
+                            >
+                              <FontAwesomeIcon icon={faEllipsisH} className="text-xs" />
+                            </button>
+                          )}
+                        </div>
+                        <h3 className="font-semibold text-gray-800 text-sm lg:text-base truncate">{product.product_name}</h3>
+                        <p className="text-xs text-gray-600 mb-2 line-clamp-2">{product.description}</p>
+                        <div className="flex justify-between items-center mb-2 lg:mb-3">
+                          <span className="text-orange-600 font-bold text-sm lg:text-base">{formatCurrency(product.total_amount)}</span>
+                          <span className={`px-2 py-1 rounded text-xs ${
+                            product.is_available ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          }`}>
+                            {product.is_available ? 'Available' : 'Unavailable'}
+                          </span>
+                        </div>
+                        <div className={`flex gap-2 ${isMobile ? 'hidden' : 'flex'}`}>
+                          <button
+                            onClick={() => startEditingProduct(product)}
+                            className="flex-1 bg-orange-500 text-white py-2 rounded hover:bg-orange-600 transition-colors text-xs lg:text-sm flex items-center justify-center gap-1"
+                          >
+                            <FontAwesomeIcon icon={faEdit} />
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => deleteProduct(product.id)}
+                            className="flex-1 bg-red-500 text-white py-2 rounded hover:bg-red-600 transition-colors text-xs lg:text-sm flex items-center justify-center gap-1"
+                          >
+                            <FontAwesomeIcon icon={faTrash} />
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {products.length === 0 && (
+                    <div className="text-center py-8 lg:py-12 text-gray-500">
+                      <FontAwesomeIcon icon={faHamburger} className="text-3xl lg:text-4xl mb-2 lg:mb-3 text-gray-300" />
+                      <p className="text-sm lg:text-base">No products found</p>
+                      <button
+                        onClick={startAddingProduct}
+                        className="mt-3 lg:mt-4 bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors text-sm lg:text-base"
+                      >
+                        Add Your First Product
+                      </button>
                     </div>
-                    
-                    <div>
-                      <label className="block text-base font-semibold text-gray-700 mb-3">
-                        Delivery Address *
-                      </label>
-                      <textarea
-                        required
-                        rows="3"
-                        className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white resize-none text-base"
-                        value={customerInfo.address}
-                        onChange={(e) => setCustomerInfo({...customerInfo, address: e.target.value})}
-                        placeholder="Enter your complete delivery address"
-                      />
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Reports Tab */}
+          {activeTab === "reports" && (
+            <div className="space-y-4 lg:space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+                {/* Revenue Overview */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 lg:p-6">
+                  <div className="flex justify-between items-center mb-3 lg:mb-4">
+                    <h2 className="text-base lg:text-lg font-semibold text-gray-800">Revenue Overview</h2>
+                    <div className="text-xs lg:text-sm text-gray-500">
+                      Currency: <span className="font-bold">{currency}</span>
+                    </div>
+                  </div>
+                  <div className="h-48 lg:h-64 bg-gray-50 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-200">
+                    <div className="text-center">
+                      <FontAwesomeIcon icon={faChartBar} className="text-3xl lg:text-4xl text-gray-300 mb-2 lg:mb-3" />
+                      <p className="text-gray-500 text-sm lg:text-base">Revenue chart in {currency}</p>
+                      <p className="text-xs lg:text-sm text-gray-400 mt-1 lg:mt-2">Total: {formatCurrency(dashboardStats.totalRevenue)}</p>
                     </div>
                   </div>
                 </div>
 
-                {/* Payment Methods */}
-                <div className="bg-orange-50 rounded-2xl p-6 border border-orange-200">
-                  <PaymentMethods
-                    selectedPayment={selectedPayment}
-                    onPaymentChange={setSelectedPayment}
-                    cartSummary={cartSummary}
-                    formatPrice={formatPrice}
-                  />
-                </div>
-
-                {/* Order Summary */}
-                <div className="bg-green-50 rounded-2xl p-6 border border-green-200">
-                  <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center">
-                    <FontAwesomeIcon icon={faShoppingCart} className="text-green-500 mr-4 text-xl" />
-                    Order Summary
-                  </h3>
-                  
-                  <div className="space-y-4 max-h-48 overflow-y-auto pr-2">
-                    {cart.map((item, index) => (
-                      <div key={index} className="flex items-center justify-between p-4 bg-white rounded-xl border border-gray-200">
-                        <div className="flex items-center space-x-4 flex-1 min-w-0">
-                          <ProductImage
-                            product={item}
-                            className="w-16 h-16 object-cover rounded-lg bg-gray-200"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <p className="font-semibold text-gray-800 text-base truncate">{item.product_name}</p>
-                            <p className="text-gray-600 text-sm">Qty: {item.quantity}</p>
-                          </div>
+                {/* Order Analytics */}
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 lg:p-6">
+                  <h2 className="text-base lg:text-lg font-semibold text-gray-800 mb-3 lg:mb-4">Order Analytics</h2>
+                  <div className="space-y-3 lg:space-y-4">
+                    {[
+                      { label: "Total Orders", value: dashboardStats.totalOrders, isCurrency: false, color: "bg-blue-500" },
+                      { label: "Pending Orders", value: dashboardStats.pendingOrders, isCurrency: false, color: "bg-yellow-500" },
+                      { label: "Completed Orders", value: dashboardStats.completedOrders, isCurrency: false, color: "bg-green-500" },
+                      { label: "Cancelled Orders", value: dashboardStats.totalOrders - dashboardStats.pendingOrders - dashboardStats.completedOrders, isCurrency: false, color: "bg-red-500" },
+                      { label: "Total Revenue", value: dashboardStats.totalRevenue, isCurrency: true, color: "bg-indigo-500" },
+                    ].map((stat, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 lg:p-3 bg-gray-50 rounded-lg">
+                        <div className="flex items-center gap-2 lg:gap-3">
+                          <div className={`w-2 h-2 lg:w-3 lg:h-3 rounded-full ${stat.color}`}></div>
+                          <span className="font-medium text-gray-700 text-xs lg:text-sm">{stat.label}</span>
                         </div>
-                        <span className="font-bold text-green-600 text-base whitespace-nowrap ml-4">
-                          {formatPrice((item.total_amount || 0) * item.quantity)}
+                        <span className="font-bold text-orange-600 text-xs lg:text-sm">
+                          {stat.isCurrency ? formatCurrency(stat.value) : stat.value}
                         </span>
                       </div>
                     ))}
                   </div>
-                  
-                  <div className="border-t border-green-200 mt-6 pt-6">
-                    <div className="flex justify-between items-center text-xl">
-                      <span className="font-bold text-gray-800">Total Amount:</span>
-                      <span className="font-bold text-green-600 text-2xl">
-                        {formatPrice(cartSummary.total)}
-                      </span>
-                    </div>
-                  </div>
                 </div>
-              </form>
-            </div>
-            
-            <div className="border-t border-gray-200 p-6 bg-gray-50">
-              <button 
-                type="submit"
-                onClick={handleCheckout}
-                disabled={loading}
-                className="w-full bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white py-4 rounded-xl transition-all duration-300 flex items-center justify-center space-x-3 font-bold text-base disabled:opacity-50 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:hover:scale-100"
-              >
-                {loading ? (
-                  <>
-                    <FontAwesomeIcon icon={faSpinner} className="animate-spin text-xl" />
-                    <span>Processing Order...</span>
-                  </>
-                ) : (
-                  <>
-                    <FontAwesomeIcon icon={faCreditCard} className="text-xl" />
-                    <span>
-                      {selectedPayment === 'momo' ? 'Place Order & Pay with MoMo' : 'Place Order (Cash on Delivery)'}
-                    </span>
-                  </>
-                )}
-              </button>
-              
-              {/* Security Notice */}
-              <div className="mt-4 text-center">
-                <div className="flex items-center justify-center space-x-2 text-sm text-gray-500">
-                  <FontAwesomeIcon icon={faShieldAlt} className="text-green-500" />
-                  <span>Secure checkout • Your data is protected</span>
+              </div>
+
+              {/* Recent Activity */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200">
+                <div className="p-4 lg:p-6 border-b border-gray-200">
+                  <h2 className="text-base lg:text-lg font-semibold text-gray-800">Recent Activity</h2>
+                </div>
+                <div className="p-3 lg:p-6">
+                  <div className="space-y-2 lg:space-y-3">
+                    {orders.slice(0, 5).map((order) => (
+                      <div key={order.id} className="flex items-center justify-between p-2 lg:p-3 border border-gray-200 rounded-lg">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-semibold text-gray-800 text-sm lg:text-base truncate">{order.customer_name}</p>
+                          <p className="text-xs text-gray-600 truncate">{order.customer_phone}</p>
+                          <p className="text-xs text-gray-500 truncate">{formatDate(order.created_at)}</p>
+                        </div>
+                        <div className="flex items-center gap-2 lg:gap-4 ml-2">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(order.status)}`}>
+                            {order.status}
+                          </span>
+                          <span className="font-bold text-orange-600 text-sm lg:text-base">
+                            {formatCurrency(order.total_amount)}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* Mobile Actions Modals */}
+      {showMobileActions?.type === 'order' && (
+        <MobileOrderActions 
+          order={showMobileActions.data} 
+          onClose={() => setShowMobileActions(null)} 
+        />
+      )}
+
+      {showMobileActions?.type === 'product' && (
+        <MobileProductActions 
+          product={showMobileActions.data} 
+          onClose={() => setShowMobileActions(null)} 
+        />
+      )}
+
+      {/* Enhanced Profile Settings Modal */}
+      {showProfileModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 flex items-center justify-center p-4">
+          <div className="bg-white/95 backdrop-blur-md rounded-2xl w-full max-w-2xl shadow-2xl border border-white/20 max-h-[90vh] overflow-hidden">
+            <div className="p-4 lg:p-6 border-b border-gray-200/50">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg lg:text-xl font-bold text-gray-800 flex items-center gap-2 lg:gap-3">
+                  <FontAwesomeIcon icon={faUserShield} className="text-orange-500" />
+                  <span className="text-sm lg:text-xl">Account Settings</span>
+                </h2>
+                <button 
+                  onClick={closeProfileModal}
+                  className="text-gray-500 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100/50 transition-colors"
+                >
+                  <FontAwesomeIcon icon={faTimes} />
+                </button>
+              </div>
+            </div>
+            
+            <form onSubmit={updateCredentials} className="p-4 lg:p-6 max-h-[calc(90vh-120px)] overflow-y-auto">
+              <div className="space-y-4 lg:space-y-6">
+                {/* Account Information Section */}
+                <div className="bg-blue-50/50 rounded-xl p-3 lg:p-4 border border-blue-200/50">
+                  <h3 className="font-semibold text-orange-800 text-sm lg:text-base mb-2 lg:mb-3 flex items-center gap-2">
+                    <FontAwesomeIcon icon={faUser} />
+                    Account Information
+                  </h3>
+                  <div className="space-y-3 lg:space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <FontAwesomeIcon icon={faEnvelope} className="mr-2 text-gray-400" />
+                        Email Address <span className="text-red-500">*</span>
+                      </label>
+                      <div className="mb-2 p-2 bg-white rounded border border-gray-200 text-xs lg:text-sm">
+                        <p className="text-gray-600">Current: <span className="font-medium">{user?.email}</span></p>
+                      </div>
+                      <input
+                        type="email"
+                        required
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white/80 backdrop-blur-sm text-sm"
+                        value={profileData.email}
+                        onChange={(e) => setProfileData({...profileData, email: e.target.value})}
+                        placeholder="Enter new email address"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Enter your new email address. You may need to verify it.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Password Change Section */}
+                <div className="bg-orange-50/50 rounded-xl p-3 lg:p-4 border border-orange-200/50">
+                  <h3 className="font-semibold text-orange-800 text-sm lg:text-base mb-2 lg:mb-3 flex items-center gap-2">
+                    <FontAwesomeIcon icon={faKey} />
+                    Change Password
+                  </h3>
+                  <div className="space-y-3 lg:space-y-4">
+                    {/* Current Password */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Current Password
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showCurrentPassword ? "text" : "password"}
+                          value={profileData.currentPassword}
+                          onChange={(e) => setProfileData({...profileData, currentPassword: e.target.value})}
+                          className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white/80 backdrop-blur-sm text-sm"
+                          placeholder="Enter current password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          <FontAwesomeIcon icon={showCurrentPassword ? faEyeSlash : faEyeOpen} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* New Password */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        New Password
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showNewPassword ? "text" : "password"}
+                          value={profileData.newPassword}
+                          onChange={(e) => setProfileData({...profileData, newPassword: e.target.value})}
+                          className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white/80 backdrop-blur-sm text-sm"
+                          placeholder="Enter new password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword(!showNewPassword)}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          <FontAwesomeIcon icon={showNewPassword ? faEyeSlash : faEyeOpen} />
+                        </button>
+                      </div>
+                      {profileData.newPassword && (
+                        <p className={`text-xs mt-1 ${
+                          profileData.newPassword.length >= 6 ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          Password must be at least 6 characters long
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Confirm Password */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Confirm New Password
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showConfirmPassword ? "text" : "password"}
+                          value={profileData.confirmPassword}
+                          onChange={(e) => setProfileData({...profileData, confirmPassword: e.target.value})}
+                          className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white/80 backdrop-blur-sm text-sm"
+                          placeholder="Confirm new password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                        >
+                          <FontAwesomeIcon icon={showConfirmPassword ? faEyeSlash : faEyeOpen} />
+                        </button>
+                      </div>
+                      {profileData.confirmPassword && profileData.newPassword !== profileData.confirmPassword && (
+                        <p className="text-red-600 text-xs mt-1">Passwords do not match</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-2 lg:gap-3 pt-2 lg:pt-4">
+                  <button
+                    type="button"
+                    onClick={closeProfileModal}
+                    className="flex-1 bg-gray-500/80 text-white py-2 lg:py-3 rounded-lg hover:bg-gray-600 transition-colors font-medium backdrop-blur-sm text-sm lg:text-base flex items-center justify-center gap-2"
+                  >
+                    <FontAwesomeIcon icon={faCancel} />
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={updatingProfile}
+                    className="flex-1 bg-blue-500/90 text-white py-2 lg:py-3 rounded-lg hover:bg-blue-600 transition-colors font-medium backdrop-blur-sm disabled:opacity-50 flex items-center justify-center gap-2 text-sm lg:text-base"
+                  >
+                    {updatingProfile ? (
+                      <>
+                        <FontAwesomeIcon icon={faRefresh} className="animate-spin" />
+                        Updating...
+                      </>
+                    ) : (
+                      <>
+                        <FontAwesomeIcon icon={faSave} />
+                        Save Changes
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
       )}
 
-      {/* Order Tracking Modal */}
-      {trackingOrder && (
-        <OrderTracking 
-          order={trackingOrder} 
-          onClose={closeTracking}
-        />
+      {/* Enhanced Product Modal */}
+      {showProductModal && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 flex items-center justify-center p-4">
+          <div className="bg-white/95 backdrop-blur-md rounded-2xl w-full max-w-4xl shadow-2xl border border-white/20 max-h-[90vh] overflow-hidden">
+            <div className="p-4 lg:p-6 border-b border-gray-200/50">
+              <div className="flex justify-between items-center">
+                <h2 className="text-lg lg:text-xl font-bold text-gray-800">
+                  {editingProduct ? 'Edit Product' : 'Add New Product'}
+                </h2>
+                <button 
+                  onClick={closeProductModal}
+                  className="text-gray-500 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100/50 transition-colors"
+                >
+                  <FontAwesomeIcon icon={faTimes} />
+                </button>
+              </div>
+            </div>
+            
+            <form onSubmit={saveProduct} className="p-4 lg:p-6 max-h-[calc(90vh-120px)] overflow-y-auto">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+                {/* Left Column - Image Upload & Preview */}
+                <div className="space-y-3 lg:space-y-4">
+                  {/* Image Upload Section */}
+                  <div className="bg-gray-50/50 rounded-xl p-3 lg:p-4 border border-gray-200/50">
+                    <h3 className="font-semibold text-gray-800 text-sm lg:text-base mb-2 lg:mb-3">Product Image</h3>
+                    
+                    {/* File Upload */}
+                    <div className="mb-3 lg:mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                        <FontAwesomeIcon icon={faCloudUpload} className="text-gray-400" />
+                        Upload Image
+                      </label>
+                      <div className="border-2 border-dashed border-gray-300 rounded-lg p-3 lg:p-4 text-center hover:border-orange-400 transition-colors">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileSelect}
+                          className="hidden"
+                          id="file-upload"
+                        />
+                        <label htmlFor="file-upload" className="cursor-pointer block">
+                          <FontAwesomeIcon icon={faUpload} className="text-gray-400 text-xl lg:text-2xl mb-2" />
+                          <p className="text-xs lg:text-sm text-gray-600">
+                            {selectedFile ? selectedFile.name : 'Click to upload or drag and drop'}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">PNG, JPG, GIF, WebP up to 5MB</p>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Image Preview */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Preview</label>
+                      <div className="border border-gray-200 rounded-lg p-2 lg:p-3 bg-white/50">
+                        {imagePreview ? (
+                          <img
+                            src={imagePreview}
+                            alt="Preview"
+                            className="w-full h-24 lg:h-32 object-cover rounded-lg"
+                            onError={(e) => {
+                              e.target.src = "https://via.placeholder.com/300x200/FFA500/FFFFFF?text=Invalid+Image";
+                            }}
+                          />
+                        ) : (
+                          <div className="w-full h-24 lg:h-32 bg-gray-100 rounded-lg flex items-center justify-center">
+                            <FontAwesomeIcon icon={faImage} className="text-gray-400 text-xl lg:text-2xl" />
+                            <span className="text-gray-500 ml-2 text-sm">No image selected</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column - Product Details Form */}
+                <div className="space-y-3 lg:space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Product Name <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={productForm.name}
+                      onChange={(e) => setProductForm({...productForm, name: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white/80 text-sm"
+                      placeholder="Enter product name"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Description <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      required
+                      value={productForm.description}
+                      onChange={(e) => setProductForm({...productForm, description: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white/80 text-sm"
+                      placeholder="Enter product description"
+                      rows="3"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Price (FRW) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      step="0.01"
+                      value={productForm.price}
+                      onChange={(e) => setProductForm({...productForm, price: e.target.value})}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white/80 text-sm"
+                      placeholder="Enter price"
+                    />
+                  </div>
+                  
+                  <div className="flex items-center gap-2 p-2 lg:p-3 bg-gray-50/50 rounded-lg border border-gray-200/50">
+                    <input
+                      type="checkbox"
+                      id="product-available"
+                      checked={productForm.is_available}
+                      onChange={(e) => setProductForm({...productForm, is_available: e.target.checked})}
+                      className="rounded border-gray-300 text-orange-500 focus:ring-orange-500"
+                    />
+                    <label htmlFor="product-available" className="text-sm text-gray-700 font-medium">
+                      Available for sale
+                    </label>
+                  </div>
+                  
+                  <div className="flex gap-2 lg:gap-3 pt-2 lg:pt-4">
+                    <button
+                      type="button"
+                      onClick={closeProductModal}
+                      className="flex-1 bg-gray-500/80 text-white py-2 lg:py-3 rounded-lg hover:bg-gray-600 transition-colors font-medium backdrop-blur-sm text-sm lg:text-base"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={uploading}
+                      className="flex-1 bg-orange-500/90 text-white py-2 lg:py-3 rounded-lg hover:bg-orange-600 transition-colors font-medium backdrop-blur-sm disabled:opacity-50 flex items-center justify-center gap-2 text-sm lg:text-base"
+                    >
+                      {uploading ? (
+                        <>
+                          <FontAwesomeIcon icon={faRefresh} className="animate-spin" />
+                          Uploading...
+                        </>
+                      ) : (
+                        <>
+                          <FontAwesomeIcon icon={editingProduct ? faSave : faPlus} />
+                          {editingProduct ? 'Update Product' : 'Add Product'}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
-      {/* Edit Profile Modal */}
-      {showEditProfile && (
-        <EditProfileModal
-          user={userProfile}
-          onSave={handleProfileUpdate}
-          onClose={() => setShowEditProfile(false)}
-          loading={loading}
-        />
+      {/* Mobile sidebar overlay */}
+      {sidebarOpen && isMobile && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-20 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        ></div>
       )}
 
-      {/* Custom CSS for enhanced responsive behavior */}
+      {/* Add CSS for animations */}
       <style jsx>{`
-        .hide-scrollbar {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
-        .hide-scrollbar::-webkit-scrollbar {
-          display: none;
-        }
-        
-        @keyframes shake {
-          0%, 100% { transform: translateX(0); }
-          25% { transform: translateX(-5px); }
-          75% { transform: translateX(5px); }
-        }
-        
-        .animate-shake {
-          animation: shake 0.5s ease-in-out;
-        }
-        
-        @keyframes fade-in {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        
-        .animate-fade-in {
-          animation: fade-in 0.3s ease-out;
-        }
-        
         @keyframes slide-up {
-          from { 
-            opacity: 0;
-            transform: translateY(20px);
+          from {
+            transform: translateY(100%);
           }
-          to { 
-            opacity: 1;
+          to {
             transform: translateY(0);
           }
         }
-        
         .animate-slide-up {
           animation: slide-up 0.3s ease-out;
         }
       `}</style>
     </div>
   );
-};
-
-// Edit Profile Modal - Enhanced responsive design
-const EditProfileModal = React.memo(({ user, onSave, onClose, loading }) => {
-  const [formData, setFormData] = useState({
-    username: user?.username || '',
-    email: user?.email || '',
-    phone: user?.phone || '',
-    address: user?.address || ''
-  });
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    
-    // Validate required fields
-    if (!formData.username.trim() || !formData.email.trim()) {
-      alert('Username and email are required');
-      return;
-    }
-
-    // For now, just update local storage and state
-    const updatedUser = {
-      ...user,
-      username: formData.username,
-      email: formData.email,
-      phone: formData.phone,
-      address: formData.address
-    };
-
-    // Update localStorage
-    localStorage.setItem('user', JSON.stringify(updatedUser));
-    
-    // Call the onSave callback to update parent state
-    onSave(updatedUser);
-    
-    // Show success message
-    alert('Profile updated successfully (local storage only)!');
-    
-    // Close modal
-    onClose();
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 animate-fade-in">
-      <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl border border-gray-200 animate-slide-up">
-        <div className="border-b border-gray-200 p-6">
-          <div className="flex justify-between items-center">
-            <h3 className="text-2xl font-bold text-gray-800 flex items-center">
-              <FontAwesomeIcon icon={faEdit} className="text-orange-500 mr-4 text-2xl" />
-              Edit Profile 
-            </h3>
-            <button 
-              onClick={onClose}
-              className="text-gray-500 hover:text-gray-700 p-2 rounded-full hover:bg-gray-100 transition-colors duration-200"
-            >
-              <FontAwesomeIcon icon={faTimes} className="text-xl" />
-            </button>
-          </div>
-        </div>
-        
-        <form onSubmit={handleSubmit} className="p-6">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-base font-semibold text-gray-700 mb-3">
-                Username *
-              </label>
-              <input
-                type="text"
-                value={formData.username}
-                onChange={(e) => setFormData({...formData, username: e.target.value})}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-base"
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-base font-semibold text-gray-700 mb-3">
-                Email *
-              </label>
-              <input
-                type="email"
-                value={formData.email}
-                onChange={(e) => setFormData({...formData, email: e.target.value})}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-base"
-                required
-              />
-            </div>
-            
-            <div>
-              <label className="block text-base font-semibold text-gray-700 mb-3">
-                Phone
-              </label>
-              <input
-                type="tel"
-                value={formData.phone}
-                onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-base"
-                placeholder="+250 78 123 4567"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-base font-semibold text-gray-700 mb-3">
-                Address
-              </label>
-              <textarea
-                value={formData.address}
-                onChange={(e) => setFormData({...formData, address: e.target.value})}
-                rows="3"
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white resize-none text-base"
-                placeholder="Enter your delivery address"
-              />
-            </div>
-          </div>
-          
-          <div className="flex space-x-4 mt-8">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-4 rounded-xl transition-colors duration-200 font-semibold text-base shadow-lg hover:shadow-xl transform hover:scale-105"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="flex-1 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white py-4 rounded-xl transition-colors duration-200 font-semibold text-base shadow-lg hover:shadow-xl transform hover:scale-105"
-            >
-              Save Changes Locally
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-});
-
-export default UserDashboard;
+}
