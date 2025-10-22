@@ -387,55 +387,7 @@ Please:
           </button>
         </form>
 
-        {/* Test Connection Button */}
-        <button
-          onClick={testConnection}
-          disabled={loading || redirecting}
-          className="w-full mt-4 bg-gray-500 hover:bg-gray-600 disabled:bg-gray-300 text-white py-2 px-4 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center"
-        >
-          <FontAwesomeIcon icon={faSpinner} className={(loading || redirecting) ? 'animate-spin mr-2' : 'mr-2'} />
-          Test Server Connection
-        </button>
-
-        {/* Toggle between Login/Signup */}
-        <div className="text-center mt-6">
-          <button
-            onClick={toggleMode}
-            disabled={redirecting}
-            className="text-orange-600 hover:text-orange-800 disabled:text-orange-300 font-medium transition-colors duration-200 text-sm"
-          >
-            <FontAwesomeIcon 
-              icon={isLogin ? faUserPlus : faSignInAlt} 
-              className="mr-2" 
-            />
-            {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
-          </button>
-        </div>
-
-        {/* Debug Info */}
-        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-          <h4 className="font-bold text-blue-800 mb-2">Debug Information</h4>
-          <p className="text-sm text-blue-700">
-            <strong>Backend URL:</strong> {API_URL}<br />
-            <strong>Login Endpoint:</strong> {API_URL}/api/auth/login<br />
-            <strong>Register Endpoint:</strong> {API_URL}/api/auth/register<br />
-            <strong>Health Check:</strong> {API_URL}/api/health
-          </p>
-        </div>
-
-        {/* Troubleshooting Tips */}
-        <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-          <h4 className="font-bold text-yellow-800 mb-2">Troubleshooting Tips</h4>
-          <ul className="text-sm text-yellow-700 list-disc list-inside space-y-1">
-            <li>Click "Test Server Connection" first to verify backend is running</li>
-            <li>Render free tier servers sleep after 15 minutes of inactivity</li>
-            <li>First request may take 30-60 seconds to wake up the server</li>
-            <li>Check browser console (F12) for detailed error messages</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  );
+      
 };
 
 export default UserLogin;
