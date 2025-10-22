@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg
+  width="512"
+  height="512"
+  viewBox="0 0 512 512"
+  fill="none"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <!-- Background -->
+  <rect width="512" height="512" rx="96" fill="#FF7F27"/>
+
+  <!-- Top bun -->
+  <path
+    d="M128 220C128 172 184 128 256 128C328 128 384 172 384 220H128Z"
+    fill="white"
+  />
+
+  <!-- Sesame seeds -->
+  <circle cx="200" cy="180" r="8" fill="#FF7F27"/>
+  <circle cx="240" cy="168" r="8" fill="#FF7F27"/>
+  <circle cx="280" cy="184" r="8" fill="#FF7F27"/>
+  <circle cx="320" cy="172" r="8" fill="#FF7F27"/>
+
+  <!-- Patty -->
+  <rect x="128" y="236" width="256" height="32" rx="16" fill="white"/>
+
+  <!-- Bottom bun -->
+  <path
+    d="M128 292H384C384 340 328 384 256 384C184 384 128 340 128 292Z"
+    fill="white"
+  />
+</svg>
