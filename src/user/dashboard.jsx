@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-// Remove the API_URL import from config and set it directly
-// import { API_URL } from "../config";
+import { API_URL } from "../config";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faUser, faHistory, faBox, faEdit, faSignOutAlt,
@@ -14,9 +13,6 @@ import {
   faUserShield, faIdCard, faLocationDot, faShieldAlt, faChartBar,
   faReceipt
 } from '@fortawesome/free-solid-svg-icons';
-
-// Set the API URL directly to your deployed backend
-const API_URL = "https://backend-wgm2.onrender.com";
 
 // User context simulation
 const useUser = () => {
@@ -498,7 +494,7 @@ const UserDashboard = () => {
   const [selectedPayment, setSelectedPayment] = useState('momo');
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // Use the deployed backend URL directly
+  // Use API_URL from config
   const API_BASE_URL = API_URL;
 
   // Enhanced fetch function with comprehensive error handling
@@ -565,7 +561,7 @@ const UserDashboard = () => {
       }
 
       console.log('Fetching orders for user:', user.id);
-      const data = await fetchWithAuth('/api/orders/user');
+      const data = await fetchWithAuth(`/orders/user/${user.id}`);
       
       if (data && Array.isArray(data)) {
         setOrders(data);
@@ -595,7 +591,7 @@ const UserDashboard = () => {
       setError('');
       
       console.log('Fetching products...');
-      const data = await fetchWithAuth('/api/products');
+      const data = await fetchWithAuth('/products');
       
       if (data && Array.isArray(data)) {
         setProducts(data);
@@ -712,7 +708,7 @@ const UserDashboard = () => {
 
       console.log('Submitting order:', orderData);
       
-      const data = await fetchWithAuth('/api/orders', {
+      const data = await fetchWithAuth('/orders', {
         method: 'POST',
         body: JSON.stringify(orderData)
       });
@@ -817,7 +813,7 @@ const UserDashboard = () => {
   const testAPIConnection = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/api/health`);
+      const response = await fetch(`${API_BASE_URL}/health`);
       if (response.ok) {
         console.log('API connection successful');
         setMessage('API connection successful!');
@@ -1667,7 +1663,7 @@ const EditProfileModal = React.memo(({ user, onSave, onClose, loading }) => {
         </form>
       </div>
     </div>
-  ); 
+  );
 });
 
 export default UserDashboard;
