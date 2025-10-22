@@ -72,7 +72,7 @@ const UserLogin = () => {
   const [messageType, setMessageType] = useState('');
   const { login } = useUser();
 
-  const API_BASE_URL = API_URL;
+  const API_BASE_URL = API_URL || 'http://localhost:5000/api';
 
   // Clear all messages and errors
   const clearMessages = () => {
@@ -101,7 +101,7 @@ const UserLogin = () => {
     setMessageType(type);
   };
 
-  // Form validation - FIXED: Better validation logic
+  // Form validation
   const validateForm = () => {
     const errors = {};
 
@@ -147,7 +147,7 @@ const UserLogin = () => {
     return Object.keys(errors).length === 0;
   };
 
-  // FIXED: Better API request handler with timeout
+  // API request handler with timeout
   const makeApiRequest = async (url, options, timeout = 10000) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -226,11 +226,10 @@ const UserLogin = () => {
       showMessage(data.message, 'success');
 
       if (isLogin) {
-        // Store user data and redirect - FIXED: Better redirect handling
+        // Store user data and redirect to dashboard
         login(data.user);
         setTimeout(() => {
-          // Use window.location.replace to prevent back navigation to login
-          window.location.replace('/userdashboard');
+          window.location.href = '/userdashboard';
         }, 1500);
       } else {
         // Switch to login after successful registration
