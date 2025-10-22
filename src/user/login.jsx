@@ -1,3 +1,4 @@
+// components/UserLogin.js
 import React, { useState } from 'react';
 import { API_URL } from "../config";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -5,57 +6,10 @@ import {
   faUser, faEnvelope, faLock, faSignInAlt, 
   faUserPlus, faSpinner, faArrowLeft, faHamburger,
   faKey, faCheckCircle, faExclamationTriangle,
-  faWifi, faServer
+  faServer
 } from '@fortawesome/free-solid-svg-icons';
 
-// User context simulation
-const useUser = () => {
-  const [user, setUser] = useState(() => {
-    try {
-      const saved = localStorage.getItem('user');
-      return saved ? JSON.parse(saved) : null;
-    } catch (error) {
-      console.error('Error parsing user data from localStorage:', error);
-      return null;
-    }
-  });
-
-  const login = (userData) => {
-    try {
-      setUser(userData);
-      localStorage.setItem('user', JSON.stringify(userData));
-    } catch (error) {
-      console.error('Error saving user data to localStorage:', error);
-    }
-  };
-
-  const logout = () => {
-    setUser(null);
-    try {
-      localStorage.removeItem('user');
-    } catch (error) {
-      console.error('Error removing user data from localStorage:', error);
-    }
-  };
-
-  return { user, login, logout };
-};
-
-// Validation functions
-const validateEmail = (email) => {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
-};
-
-const validatePassword = (password) => {
-  return password && password.length >= 6;
-};
-
-const validateUsername = (username) => {
-  return username && username.length >= 3 && username.length <= 20;
-};
-
-const UserLogin = () => {
+const UserLogin = ({ onLogin }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
@@ -71,36 +25,7 @@ const UserLogin = () => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
-  const { login } = useUser();
 
-  const API_BASE_URL = API_URL;
-
-  // Test backend connection
-  const testBackendConnection = async () => {
-    try {
-      console.log('Testing connection to:', API_BASE_URL);
-      const response = await fetch(`${API_BASE_URL}/health`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Backend connection successful:', data);
-        return true;
-      } else {
-        console.log('Backend responded with status:', response.status);
-        return false;
-      }
-    } catch (error) {
-      console.error('Backend connection test failed:', error);
-      return false;
-    }
-  };
-
-  // Clear all messages and errors
   const clearMessages = () => {
     setMessage('');
     setFormErrors({});
@@ -113,7 +38,6 @@ const UserLogin = () => {
       [name]: value
     });
     
-    // Clear field-specific error when user starts typing
     if (formErrors[name]) {
       setFormErrors({
         ...formErrors,
@@ -127,38 +51,33 @@ const UserLogin = () => {
     setMessageType(type);
   };
 
-  // Form validation
   const validateForm = () => {
     const errors = {};
 
-    // Email validation
     if (!formData.email.trim()) {
       errors.email = 'Email is required';
-    } else if (!validateEmail(formData.email)) {
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       errors.email = 'Please enter a valid email address';
     }
 
-    // Password validation
     if (!formData.password) {
       errors.password = 'Password is required';
-    } else if (!validatePassword(formData.password)) {
+    } else if (formData.password.length < 6) {
       errors.password = 'Password must be at least 6 characters long';
     }
 
-    // Username validation for registration
     if (!isLogin) {
       if (!formData.username.trim()) {
         errors.username = 'Username is required';
-      } else if (!validateUsername(formData.username)) {
+      } else if (formData.username.length < 3 || formData.username.length > 20) {
         errors.username = 'Username must be between 3 and 20 characters';
       }
     }
 
-    // Reset password validation
     if (showResetPassword) {
       if (!formData.newPassword) {
         errors.newPassword = 'New password is required';
-      } else if (!validatePassword(formData.newPassword)) {
+      } else if (formData.newPassword.length < 6) {
         errors.newPassword = 'Password must be at least 6 characters long';
       }
 
@@ -173,72 +92,36 @@ const UserLogin = () => {
     return Object.keys(errors).length === 0;
   };
 
-  // Enhanced API request handler with better error diagnostics
-  const makeApiRequest = async (url, options, timeout = 15000) => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-    
+  const makeApiRequest = async (url, options) => {
     try {
-      console.log(`Making API request to: ${url}`);
-      
       const response = await fetch(url, {
         ...options,
-        signal: controller.signal
+        headers: {
+          'Content-Type': 'application/json',
+          ...options.headers,
+        },
       });
-      clearTimeout(timeoutId);
 
-      console.log(`Response status: ${response.status}`);
-
-      // Check if response is JSON
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        console.error('Non-JSON response:', text);
-        throw new Error(`Server returned non-JSON response: ${response.status}`);
-      }
-
-      const data = await response.json();
-      
       if (!response.ok) {
-        console.error('API error response:', data);
-        throw new Error(data.message || `Request failed with status ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Request failed with status ${response.status}`);
       }
 
-      console.log('API success response:', data);
-      return data;
+      return await response.json();
     } catch (error) {
-      clearTimeout(timeoutId);
       console.error('API request failed:', error);
-      
-      if (error.name === 'AbortError') {
-        throw new Error('Request timeout - server is taking too long to respond');
-      } else if (error.name === 'TypeError') {
-        // Test connection to diagnose the issue
-        const isConnected = await testBackendConnection();
-        if (!isConnected) {
-          throw new Error(`Cannot connect to server. Please check:\n• Your internet connection\n• If the backend server is running\n• Server URL: ${API_BASE_URL}`);
-        } else {
-          throw new Error('Network error - please check your connection and try again');
-        }
+      if (error.name === 'TypeError') {
+        throw new Error('Cannot connect to server. Please check your internet connection and try again.');
       }
       throw error;
     }
-  };
-
-  // Redirect function
-  const redirectToDashboard = () => {
-    // Use window location for navigation
-    window.location.href = '/userdashboard';
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     clearMessages();
 
-    if (loading) {
-      showMessage('Please wait...', 'info');
-      return;
-    }
+    if (loading) return;
 
     if (!validateForm()) {
       showMessage('Please fix the errors above', 'error');
@@ -246,7 +129,6 @@ const UserLogin = () => {
     }
 
     setLoading(true);
-    showMessage('Connecting to server...', 'info');
 
     try {
       const endpoint = isLogin ? '/auth/login' : '/auth/register';
@@ -261,59 +143,32 @@ const UserLogin = () => {
             password: formData.password 
           };
 
-      console.log('Sending request to:', `${API_BASE_URL}${endpoint}`);
-      console.log('Payload:', { ...payload, password: '***' }); // Hide password in logs
-
-      const data = await makeApiRequest(`${API_BASE_URL}${endpoint}`, {
+      const data = await makeApiRequest(`${API_URL}${endpoint}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify(payload),
       });
 
       if (isLogin) {
-        // Store user data and redirect
         if (data.user) {
-          login(data.user);
+          // Store user data and call onLogin callback
+          localStorage.setItem('user', JSON.stringify(data.user));
           showMessage('✅ Login successful! Redirecting...', 'success');
           
           setTimeout(() => {
-            redirectToDashboard();
+            onLogin(data.user);
           }, 1000);
         } else {
           throw new Error('No user data received from server');
         }
       } else {
-        // Registration success
         showMessage('✅ Account created successfully! Please login.', 'success');
-        // Switch to login mode and clear form
         setIsLogin(true);
         setFormData({ username: '', email: '', password: '', newPassword: '', confirmPassword: '' });
       }
 
     } catch (error) {
       console.error('Authentication error:', error);
-      
-      // More specific error messages
-      if (error.message.includes('Cannot connect to server')) {
-        showMessage(
-          `🚨 Connection Error\n\n${error.message}\n\nPlease ensure:\n• Backend server is deployed and running\n• CORS is properly configured\n• Network firewall allows the connection`,
-          'error'
-        );
-      } else if (error.message.includes('timeout')) {
-        showMessage(
-          '⏰ Server timeout - The server is taking too long to respond. Please try again in a moment.',
-          'error'
-        );
-      } else if (error.message.includes('Network error')) {
-        showMessage(
-          '📡 Network Error - Please check your internet connection and try again.',
-          'error'
-        );
-      } else {
-        showMessage(error.message || 'An unexpected error occurred. Please try again.', 'error');
-      }
+      showMessage(error.message || 'An unexpected error occurred. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -327,42 +182,24 @@ const UserLogin = () => {
       return;
     }
 
-    if (!validateEmail(formData.email)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
       showMessage('Please enter a valid email address', 'error');
       return;
     }
 
-    if (loading) {
-      showMessage('Please wait...', 'info');
-      return;
-    }
+    if (loading) return;
 
     setLoading(true);
-    showMessage('Testing server connection...', 'info');
 
     try {
-      // First test connection
-      const isConnected = await testBackendConnection();
-      if (!isConnected) {
-        throw new Error('Cannot connect to server. Please check if the backend is running.');
-      }
-
-      showMessage('Sending password reset link...', 'info');
-
-      const data = await makeApiRequest(`${API_BASE_URL}/auth/forgot-password`, {
+      const data = await makeApiRequest(`${API_URL}/auth/forgot-password`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({ email: formData.email.trim().toLowerCase() }),
       });
 
-      showMessage('✅ If an account with that email exists, a password reset link has been sent! Check your inbox and spam folder.', 'success');
+      showMessage('✅ If an account with that email exists, a password reset link has been sent!', 'success');
       
-      // Auto-show reset form in demo mode if token is provided
       if (data.demoResetToken) {
-        console.log('Demo reset token:', data.demoResetToken);
-        
         setTimeout(() => {
           setResetToken(data.demoResetToken);
           setShowForgotPassword(false);
@@ -398,20 +235,13 @@ const UserLogin = () => {
       return;
     }
 
-    if (loading) {
-      showMessage('Please wait...', 'info');
-      return;
-    }
+    if (loading) return;
 
     setLoading(true);
-    showMessage('Testing server connection...', 'info');
 
     try {
-      const data = await makeApiRequest(`${API_BASE_URL}/auth/reset-password`, {
+      const data = await makeApiRequest(`${API_URL}/auth/reset-password`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           token: resetToken,
           newPassword: formData.newPassword
@@ -420,7 +250,6 @@ const UserLogin = () => {
 
       showMessage('✅ Password reset successfully! You can now login with your new password.', 'success');
       
-      // Reset states and go back to login
       setTimeout(() => {
         setShowResetPassword(false);
         setIsLogin(true);
@@ -437,10 +266,6 @@ const UserLogin = () => {
     }
   };
 
-  const goToHomepage = () => {
-    window.location.href = '/';
-  };
-
   const handleBackToLogin = () => {
     setShowForgotPassword(false);
     setShowResetPassword(false);
@@ -455,60 +280,30 @@ const UserLogin = () => {
     clearMessages();
   };
 
-  // Connection troubleshooting component
-  const ConnectionTroubleshooting = () => (
-    <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-      <div className="flex items-start">
-        <FontAwesomeIcon icon={faServer} className="text-yellow-500 mt-1 mr-3 flex-shrink-0" />
-        <div>
-          <p className="text-sm text-yellow-800 font-medium">Connection Issues?</p>
-          <p className="text-xs text-yellow-700 mt-1">
-            If you're seeing network errors, please ensure:
-          </p>
-          <ul className="text-xs text-yellow-700 mt-1 list-disc list-inside">
-            <li>Backend server is running at: <code className="bg-yellow-100 px-1 rounded">{API_BASE_URL}</code></li>
-            <li>CORS is properly configured on the server</li>
-            <li>Your internet connection is stable</li>
-            <li>No firewall is blocking the connection</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  );
-
   // Forgot Password View
   if (showForgotPassword) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md relative">
-          {/* Back Button */}
           <button
             onClick={handleBackToLogin}
             className="absolute top-4 left-4 text-gray-500 hover:text-gray-700 transition-colors p-2"
-            aria-label="Back to login"
           >
             <FontAwesomeIcon icon={faArrowLeft} className="text-lg" />
           </button>
 
-          {/* Header */}
           <div className="text-center mb-8">
             <div className="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
               <FontAwesomeIcon icon={faKey} className="text-white text-2xl" />
             </div>
             <h2 className="text-3xl font-bold text-gray-800">Reset Password</h2>
-            <p className="text-gray-600 mt-2">
-              Enter your email to receive a reset link
-            </p>
+            <p className="text-gray-600 mt-2">Enter your email to receive a reset link</p>
           </div>
 
-          {/* Forgot Password Form */}
           <form onSubmit={(e) => { e.preventDefault(); handleForgotPassword(); }} className="space-y-6">
             <div>
               <div className="relative">
-                <FontAwesomeIcon 
-                  icon={faEnvelope} 
-                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" 
-                />
+                <FontAwesomeIcon icon={faEnvelope} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                 <input
                   type="email"
                   name="email"
@@ -519,11 +314,10 @@ const UserLogin = () => {
                   className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${
                     formErrors.email ? 'border-red-300 bg-red-50' : 'border-gray-300'
                   }`}
-                  aria-describedby={formErrors.email ? "email-error" : undefined}
                 />
               </div>
               {formErrors.email && (
-                <p id="email-error" className="text-red-500 text-sm mt-1 flex items-center">
+                <p className="text-red-500 text-sm mt-1 flex items-center">
                   <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1 text-xs" />
                   {formErrors.email}
                 </p>
@@ -532,20 +326,10 @@ const UserLogin = () => {
 
             {message && (
               <div className={`p-4 rounded-lg border ${
-                messageType === 'success' 
-                  ? 'bg-green-50 border-green-200 text-green-800' 
-                  : messageType === 'error'
-                  ? 'bg-red-50 border-red-200 text-red-800'
-                  : 'bg-blue-50 border-blue-200 text-blue-800'
+                messageType === 'success' ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'
               }`}>
                 <div className="flex items-center">
-                  <FontAwesomeIcon 
-                    icon={messageType === 'success' ? faCheckCircle : faExclamationTriangle} 
-                    className={`mr-2 ${
-                      messageType === 'success' ? 'text-green-500' : 
-                      messageType === 'error' ? 'text-red-500' : 'text-blue-500'
-                    }`} 
-                  />
+                  <FontAwesomeIcon icon={messageType === 'success' ? faCheckCircle : faExclamationTriangle} className="mr-2" />
                   <span className="whitespace-pre-line">{message}</span>
                 </div>
               </div>
@@ -554,23 +338,15 @@ const UserLogin = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white py-3 px-4 rounded-lg font-semibold transition-all duration-200 transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed"
+              className="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white py-3 px-4 rounded-lg font-semibold transition-all duration-200"
             >
               {loading ? (
-                <span>
-                  <FontAwesomeIcon icon={faSpinner} className="animate-spin mr-2" />
-                  Testing connection...
-                </span>
+                <span><FontAwesomeIcon icon={faSpinner} className="animate-spin mr-2" />Sending...</span>
               ) : (
-                <span>
-                  <FontAwesomeIcon icon={faKey} className="mr-2" />
-                  Send Reset Link
-                </span>
+                <span><FontAwesomeIcon icon={faKey} className="mr-2" />Send Reset Link</span>
               )}
             </button>
           </form>
-
-          <ConnectionTroubleshooting />
         </div>
       </div>
     );
@@ -581,34 +357,25 @@ const UserLogin = () => {
     return (
       <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md relative">
-          {/* Back Button */}
           <button
             onClick={handleBackToLogin}
             className="absolute top-4 left-4 text-gray-500 hover:text-gray-700 transition-colors p-2"
-            aria-label="Back to login"
           >
             <FontAwesomeIcon icon={faArrowLeft} className="text-lg" />
           </button>
 
-          {/* Header */}
           <div className="text-center mb-8">
             <div className="w-16 h-16 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
               <FontAwesomeIcon icon={faKey} className="text-white text-2xl" />
             </div>
             <h2 className="text-3xl font-bold text-gray-800">Create New Password</h2>
-            <p className="text-gray-600 mt-2">
-              Enter your new password below
-            </p>
+            <p className="text-gray-600 mt-2">Enter your new password below</p>
           </div>
 
-          {/* Reset Password Form */}
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={(e) => { e.preventDefault(); handleResetPassword(); }} className="space-y-6">
             <div>
               <div className="relative">
-                <FontAwesomeIcon 
-                  icon={faLock} 
-                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" 
-                />
+                <FontAwesomeIcon icon={faLock} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                 <input
                   type="password"
                   name="newPassword"
@@ -620,11 +387,10 @@ const UserLogin = () => {
                   className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${
                     formErrors.newPassword ? 'border-red-300 bg-red-50' : 'border-gray-300'
                   }`}
-                  aria-describedby={formErrors.newPassword ? "newPassword-error" : undefined}
                 />
               </div>
               {formErrors.newPassword && (
-                <p id="newPassword-error" className="text-red-500 text-sm mt-1 flex items-center">
+                <p className="text-red-500 text-sm mt-1 flex items-center">
                   <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1 text-xs" />
                   {formErrors.newPassword}
                 </p>
@@ -633,10 +399,7 @@ const UserLogin = () => {
 
             <div>
               <div className="relative">
-                <FontAwesomeIcon 
-                  icon={faLock} 
-                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" 
-                />
+                <FontAwesomeIcon icon={faLock} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                 <input
                   type="password"
                   name="confirmPassword"
@@ -648,11 +411,10 @@ const UserLogin = () => {
                   className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${
                     formErrors.confirmPassword ? 'border-red-300 bg-red-50' : 'border-gray-300'
                   }`}
-                  aria-describedby={formErrors.confirmPassword ? "confirmPassword-error" : undefined}
                 />
               </div>
               {formErrors.confirmPassword && (
-                <p id="confirmPassword-error" className="text-red-500 text-sm mt-1 flex items-center">
+                <p className="text-red-500 text-sm mt-1 flex items-center">
                   <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1 text-xs" />
                   {formErrors.confirmPassword}
                 </p>
@@ -661,20 +423,10 @@ const UserLogin = () => {
 
             {message && (
               <div className={`p-4 rounded-lg border ${
-                messageType === 'success' 
-                  ? 'bg-green-50 border-green-200 text-green-800' 
-                  : messageType === 'error'
-                  ? 'bg-red-50 border-red-200 text-red-800'
-                  : 'bg-blue-50 border-blue-200 text-blue-800'
+                messageType === 'success' ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'
               }`}>
                 <div className="flex items-center">
-                  <FontAwesomeIcon 
-                    icon={messageType === 'success' ? faCheckCircle : faExclamationTriangle} 
-                    className={`mr-2 ${
-                      messageType === 'success' ? 'text-green-500' : 
-                      messageType === 'error' ? 'text-red-500' : 'text-blue-500'
-                    }`} 
-                  />
+                  <FontAwesomeIcon icon={messageType === 'success' ? faCheckCircle : faExclamationTriangle} className="mr-2" />
                   <span className="whitespace-pre-line">{message}</span>
                 </div>
               </div>
@@ -683,23 +435,15 @@ const UserLogin = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white py-3 px-4 rounded-lg font-semibold transition-all duration-200 transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed"
+              className="w-full bg-green-500 hover:bg-green-600 disabled:bg-green-300 text-white py-3 px-4 rounded-lg font-semibold transition-all duration-200"
             >
               {loading ? (
-                <span>
-                  <FontAwesomeIcon icon={faSpinner} className="animate-spin mr-2" />
-                  Testing connection...
-                </span>
+                <span><FontAwesomeIcon icon={faSpinner} className="animate-spin mr-2" />Resetting...</span>
               ) : (
-                <span>
-                  <FontAwesomeIcon icon={faKey} className="mr-2" />
-                  Reset Password
-                </span>
+                <span><FontAwesomeIcon icon={faKey} className="mr-2" />Reset Password</span>
               )}
             </button>
           </form>
-
-          <ConnectionTroubleshooting />
         </div>
       </div>
     );
@@ -708,17 +452,7 @@ const UserLogin = () => {
   // Main Login/Signup View
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-amber-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md relative">
-        {/* Back to Home Button */}
-        <button
-          onClick={goToHomepage}
-          className="absolute top-4 left-4 text-gray-500 hover:text-gray-700 transition-colors p-2"
-          aria-label="Back to homepage"
-        >
-          <FontAwesomeIcon icon={faArrowLeft} className="text-lg" />
-        </button>
-
-        {/* Header */}
+      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-orange-500 rounded-full flex items-center justify-center mx-auto mb-4">
             <FontAwesomeIcon icon={faHamburger} className="text-white text-2xl" />
@@ -731,15 +465,11 @@ const UserLogin = () => {
           </p>
         </div>
 
-        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
           {!isLogin && (
             <div>
               <div className="relative">
-                <FontAwesomeIcon 
-                  icon={faUser} 
-                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" 
-                />
+                <FontAwesomeIcon icon={faUser} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
                 <input
                   type="text"
                   name="username"
@@ -752,11 +482,10 @@ const UserLogin = () => {
                   className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${
                     formErrors.username ? 'border-red-300 bg-red-50' : 'border-gray-300'
                   }`}
-                  aria-describedby={formErrors.username ? "username-error" : undefined}
                 />
               </div>
               {formErrors.username && (
-                <p id="username-error" className="text-red-500 text-sm mt-1 flex items-center">
+                <p className="text-red-500 text-sm mt-1 flex items-center">
                   <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1 text-xs" />
                   {formErrors.username}
                 </p>
@@ -766,10 +495,7 @@ const UserLogin = () => {
 
           <div>
             <div className="relative">
-              <FontAwesomeIcon 
-                icon={faEnvelope} 
-                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" 
-              />
+              <FontAwesomeIcon icon={faEnvelope} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               <input
                 type="email"
                 name="email"
@@ -780,11 +506,10 @@ const UserLogin = () => {
                 className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${
                   formErrors.email ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
-                aria-describedby={formErrors.email ? "email-error" : undefined}
               />
             </div>
             {formErrors.email && (
-              <p id="email-error" className="text-red-500 text-sm mt-1 flex items-center">
+              <p className="text-red-500 text-sm mt-1 flex items-center">
                 <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1 text-xs" />
                 {formErrors.email}
               </p>
@@ -793,10 +518,7 @@ const UserLogin = () => {
 
           <div>
             <div className="relative">
-              <FontAwesomeIcon 
-                icon={faLock} 
-                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" 
-              />
+              <FontAwesomeIcon icon={faLock} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               <input
                 type="password"
                 name="password"
@@ -808,24 +530,22 @@ const UserLogin = () => {
                 className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all ${
                   formErrors.password ? 'border-red-300 bg-red-50' : 'border-gray-300'
                 }`}
-                aria-describedby={formErrors.password ? "password-error" : undefined}
               />
             </div>
             {formErrors.password && (
-              <p id="password-error" className="text-red-500 text-sm mt-1 flex items-center">
+              <p className="text-red-500 text-sm mt-1 flex items-center">
                 <FontAwesomeIcon icon={faExclamationTriangle} className="mr-1 text-xs" />
                 {formErrors.password}
               </p>
             )}
           </div>
 
-          {/* Forgot Password Link (only in login mode) */}
           {isLogin && (
             <div className="text-right">
               <button
                 type="button"
                 onClick={() => setShowForgotPassword(true)}
-                className="text-orange-600 hover:text-orange-800 text-sm font-medium transition-colors duration-200 flex items-center justify-end w-full"
+                className="text-orange-600 hover:text-orange-800 text-sm font-medium transition-colors duration-200"
               >
                 <FontAwesomeIcon icon={faKey} className="mr-2" />
                 Forgot your password?
@@ -833,66 +553,39 @@ const UserLogin = () => {
             </div>
           )}
 
-          {/* Message */}
           {message && (
             <div className={`p-4 rounded-lg border ${
-              messageType === 'success' 
-                ? 'bg-green-50 border-green-200 text-green-800' 
-                : messageType === 'error'
-                ? 'bg-red-50 border-red-200 text-red-800'
-                : 'bg-blue-50 border-blue-200 text-blue-800'
+              messageType === 'success' ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'
             }`}>
               <div className="flex items-center">
-                <FontAwesomeIcon 
-                  icon={messageType === 'success' ? faCheckCircle : faExclamationTriangle} 
-                  className={`mr-2 ${
-                    messageType === 'success' ? 'text-green-500' : 
-                    messageType === 'error' ? 'text-red-500' : 'text-blue-500'
-                  }`} 
-                />
+                <FontAwesomeIcon icon={messageType === 'success' ? faCheckCircle : faExclamationTriangle} className="mr-2" />
                 <span className="whitespace-pre-line">{message}</span>
               </div>
             </div>
           )}
 
-          {/* Submit Button */}
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white py-3 px-4 rounded-lg font-semibold transition-all duration-200 transform hover:scale-105 disabled:scale-100 disabled:cursor-not-allowed"
+            className="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-orange-300 text-white py-3 px-4 rounded-lg font-semibold transition-all duration-200"
           >
             {loading ? (
-              <span>
-                <FontAwesomeIcon icon={faSpinner} className="animate-spin mr-2" />
-                {isLogin ? 'Testing connection...' : 'Testing connection...'}
-              </span>
+              <span><FontAwesomeIcon icon={faSpinner} className="animate-spin mr-2" />{isLogin ? 'Signing In...' : 'Creating Account...'}</span>
             ) : (
-              <span>
-                <FontAwesomeIcon 
-                  icon={isLogin ? faSignInAlt : faUserPlus} 
-                  className="mr-2" 
-                />
-                {isLogin ? 'Sign In' : 'Create Account'}
-              </span>
+              <span><FontAwesomeIcon icon={isLogin ? faSignInAlt : faUserPlus} className="mr-2" />{isLogin ? 'Sign In' : 'Create Account'}</span>
             )}
           </button>
         </form>
 
-        {/* Toggle between Login/Signup */}
         <div className="text-center mt-6">
           <button
             onClick={toggleMode}
             className="text-orange-600 hover:text-orange-800 font-medium transition-colors duration-200"
           >
-            <FontAwesomeIcon 
-              icon={isLogin ? faUserPlus : faSignInAlt} 
-              className="mr-2" 
-            />
+            <FontAwesomeIcon icon={isLogin ? faUserPlus : faSignInAlt} className="mr-2" />
             {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
           </button>
         </div>
-
-        <ConnectionTroubleshooting />
       </div>
     </div>
   );
