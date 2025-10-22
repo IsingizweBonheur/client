@@ -76,22 +76,26 @@ export default function AdminPanel() {
     EUR: 0.00074,
   };
 
-  const BACKEND_URL = API_URL;
-
-  // FIXED: Enhanced authentication headers for your server
+  // FIXED: Enhanced authentication headers
   const getAuthHeaders = async () => {
-    const { data } = await supabase.auth.getSession();
-    const user = data.session?.user;
-    
-    if (!user) {
-      throw new Error("No user session found");
-    }
+    try {
+      const { data } = await supabase.auth.getSession();
+      const user = data.session?.user;
+      
+      if (!user) {
+        throw new Error("No user session found");
+      }
 
-    return {
-      'Content-Type': 'application/json',
-      'user-id': user.id,
-      'user-email': user.email
-    };
+      return {
+        'Content-Type': 'application/json',
+        'user-id': user.id,
+        'user-email': user.email,
+        'Authorization': `Bearer ${data.session.access_token}`
+      };
+    } catch (error) {
+      console.error("Error getting auth headers:", error);
+      throw error;
+    }
   };
 
   useEffect(() => {
@@ -120,6 +124,7 @@ export default function AdminPanel() {
     };
   }, [isMobile, sidebarOpen]);
 
+  // FIXED: Use API_URL consistently
   const getImageUrl = (url) => {
     if (!url) return "https://via.placeholder.com/300x200/FFA500/FFFFFF?text=No+Image";
     
@@ -129,28 +134,37 @@ export default function AdminPanel() {
     }
     
     if (url.startsWith('/uploads/')) {
-      return `${BACKEND_URL}${url}?t=${Date.now()}`;
+      return `${API_URL}${url}?t=${Date.now()}`;
     }
     
-    return `${BACKEND_URL}${url.startsWith('/') ? url : '/' + url}?t=${Date.now()}`;
+    // Handle relative paths
+    if (url.startsWith('/')) {
+      return `${API_URL}${url}?t=${Date.now()}`;
+    }
+    
+    // For any other case, assume it's a relative path
+    return `${API_URL}/${url}?t=${Date.now()}`;
   };
 
+  // FIXED: Use API_URL consistently
   const uploadImage = async (file) => {
     try {
       setUploading(true);
       
       const headers = await getAuthHeaders();
-      if (!headers['user-id'] || !headers['user-email']) {
-        toast.error("Authentication required");
-        return null;
-      }
+      // Remove Content-Type for FormData, let browser set it
+      const uploadHeaders = {
+        'user-id': headers['user-id'],
+        'user-email': headers['user-email'],
+        'Authorization': headers['Authorization']
+      };
 
       const formData = new FormData();
       formData.append('image', file);
 
-      const response = await fetch(`${BACKEND_URL}/api/upload`, {
+      const response = await fetch(`${API_URL}/api/upload`, {
         method: 'POST',
-        headers: headers,
+        headers: uploadHeaders,
         body: formData
       });
 
@@ -234,11 +248,12 @@ export default function AdminPanel() {
     }
   };
 
+  // FIXED: Use API_URL consistently
   const fetchOrders = async () => {
     try {
       const headers = await getAuthHeaders();
       
-      const response = await fetch(`${BACKEND_URL}/api/orders`, {
+      const response = await fetch(`${API_URL}/api/orders`, {
         headers: headers
       });
 
@@ -262,11 +277,12 @@ export default function AdminPanel() {
     }
   };
 
+  // FIXED: Use API_URL consistently
   const fetchDashboardStats = async () => {
     try {
       const headers = await getAuthHeaders();
 
-      const response = await fetch(`${BACKEND_URL}/api/dashboard/stats`, {
+      const response = await fetch(`${API_URL}/api/dashboard/stats`, {
         headers: headers
       });
 
@@ -297,9 +313,10 @@ export default function AdminPanel() {
     }
   };
 
+  // FIXED: Use API_URL consistently
   const fetchProducts = async () => {
     try {
-      const response = await fetch(`${BACKEND_URL}/api/products`);
+      const response = await fetch(`${API_URL}/api/products`);
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: 'Failed to fetch products' }));
@@ -326,11 +343,12 @@ export default function AdminPanel() {
     }
   };
 
+  // FIXED: Use API_URL consistently
   const fetchOrderItems = async (orderId) => {
     try {
       const headers = await getAuthHeaders();
 
-      const response = await fetch(`${BACKEND_URL}/api/orders/${orderId}/items`, {
+      const response = await fetch(`${API_URL}/api/orders/${orderId}/items`, {
         headers: headers
       });
 
@@ -352,7 +370,7 @@ export default function AdminPanel() {
     }
   };
 
-  // FIXED: Enhanced updateOrderStatus function with proper error handling
+  // FIXED: Enhanced updateOrderStatus function with proper error handling and API_URL
   const updateOrderStatus = async (orderId, newStatus) => {
     try {
       console.log(`Updating order ${orderId} to status: ${newStatus}`);
@@ -364,25 +382,64 @@ export default function AdminPanel() {
         return;
       }
 
-      const response = await fetch(`${BACKEND_URL}/api/orders/${orderId}`, {
-        method: 'PUT',
-        headers: headers,
-        body: JSON.stringify({ status: newStatus })
-      });
+      // Try multiple endpoint patterns
+      const endpoints = [
+        `${API_URL}/api/orders/${orderId}/status`,
+        `${API_URL}/api/orders/${orderId}`,
+        `${API_URL}/api/orders/update-status`
+      ];
 
-      console.log('Update response status:', response.status);
+      let response;
+      let lastError;
 
-      if (!response.ok) {
-        let errorMessage = `Failed to update order status: ${response.status}`;
+      for (const endpoint of endpoints) {
+        try {
+          console.log(`Trying endpoint: ${endpoint}`);
+          response = await fetch(endpoint, {
+            method: 'PUT',
+            headers: headers,
+            body: JSON.stringify({ 
+              status: newStatus,
+              updated_by: headers['user-email'],
+              order_id: orderId
+            })
+          });
+
+          if (response.ok) {
+            break;
+          }
+        } catch (error) {
+          lastError = error;
+          console.log(`Endpoint ${endpoint} failed:`, error);
+          continue;
+        }
+      }
+
+      if (!response || !response.ok) {
+        let errorMessage = `Failed to update order status: ${response?.status || 'No response'}`;
         
         try {
-          const errorData = await response.json();
-          errorMessage = errorData.message || errorMessage;
+          const errorData = await response?.json().catch(() => ({}));
+          errorMessage = errorData.message || errorData.error || errorMessage;
           console.error('Server error details:', errorData);
         } catch (parseError) {
-          const errorText = await response.text();
+          const errorText = await response?.text().catch(() => 'No error text');
           console.error('Raw error response:', errorText);
-          errorMessage = errorText || errorMessage;
+          errorMessage = errorText || errorMessage || lastError?.message;
+        }
+        
+        // Handle specific HTTP status codes
+        if (response?.status === 401) {
+          toast.error("Authentication failed. Please log in again.");
+          await supabase.auth.signOut();
+          navigate("/login");
+          return;
+        } else if (response?.status === 404) {
+          toast.error("Order not found or endpoint unavailable.");
+          return;
+        } else if (response?.status === 500) {
+          toast.error("Server error. Please try again later.");
+          return;
         }
         
         throw new Error(errorMessage);
@@ -404,20 +461,18 @@ export default function AdminPanel() {
       
       // More specific error messages
       if (error.message.includes('Failed to fetch')) {
-        toast.error("Network error: Cannot connect to server. Please check your connection.");
-      } else if (error.message.includes('401') || error.message.includes('Authentication')) {
+        toast.error(`Network error: Cannot connect to server at ${API_URL}. Please check your connection.`);
+      } else if (error.message.includes('Authentication')) {
         toast.error("Authentication failed. Please log in again.");
         await supabase.auth.signOut();
         navigate("/login");
-      } else if (error.message.includes('404')) {
-        toast.error("Order not found. It may have been deleted.");
-        await fetchOrders(); // Refresh to get current order list
       } else {
         toast.error(error.message || "Failed to update order status");
       }
     }
   };
 
+  // FIXED: Use API_URL consistently
   const saveProduct = async (e) => {
     e.preventDefault();
     
@@ -449,13 +504,13 @@ export default function AdminPanel() {
 
       let response;
       if (editingProduct) {
-        response = await fetch(`${BACKEND_URL}/api/products/${editingProduct}`, {
+        response = await fetch(`${API_URL}/api/products/${editingProduct}`, {
           method: 'PUT',
           headers: headers,
           body: JSON.stringify(productData)
         });
       } else {
-        response = await fetch(`${BACKEND_URL}/api/products`, {
+        response = await fetch(`${API_URL}/api/products`, {
           method: 'POST',
           headers: headers,
           body: JSON.stringify(productData)
@@ -484,13 +539,14 @@ export default function AdminPanel() {
     }
   };
 
+  // FIXED: Use API_URL consistently
   const deleteProduct = async (productId) => {
     if (!window.confirm("Are you sure you want to delete this product? This action cannot be undone.")) return;
     
     try {
       const headers = await getAuthHeaders();
 
-      const response = await fetch(`${BACKEND_URL}/api/products/${productId}`, {
+      const response = await fetch(`${API_URL}/api/products/${productId}`, {
         method: 'DELETE',
         headers: headers
       });
