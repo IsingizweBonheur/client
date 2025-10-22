@@ -494,56 +494,90 @@ const UserDashboard = () => {
   const [selectedPayment, setSelectedPayment] = useState('momo');
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // Use API_URL from config instead of hardcoded localhost
+  // Use API_URL from config
   const API_BASE_URL = API_URL;
 
-  // Enhanced fetch function with better error handling
+  // Enhanced fetch function with comprehensive error handling
   const fetchWithAuth = async (url, options = {}) => {
+    const token = localStorage.getItem('token');
+    
     const headers = {
       'Content-Type': 'application/json',
       ...options.headers,
     };
 
-    // Add user authentication headers if user exists
+    // Add authentication headers
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    // Add user info if available
     if (user) {
       headers['user-id'] = user.id?.toString() || '';
       headers['user-email'] = user.email || '';
     }
 
     try {
+      console.log(`Making request to: ${API_BASE_URL}${url}`);
+      
       const response = await fetch(`${API_BASE_URL}${url}`, {
         ...options,
         headers,
+        credentials: 'include',
       });
 
+      console.log('Response status:', response.status);
+      
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.error('Server response error:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
       }
 
-      return await response.json();
+      const data = await response.json();
+      console.log('Response data:', data);
+      return data;
+      
     } catch (error) {
       console.error(`Fetch error for ${url}:`, error);
+      
+      // More specific error messages
+      if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+        throw new Error('Network error: Cannot connect to server. Please check your internet connection and ensure the server is running.');
+      }
+      
       throw error;
     }
   };
 
+  // Enhanced fetch functions with better error handling
   const fetchUserOrders = async () => {
     try {
       setLoading(true);
       setError('');
       
-      if (!user || !user.id || !user.email) {
-        throw new Error('User information is missing. Please log in again.');
+      if (!user) {
+        throw new Error('User not found. Please log in again.');
       }
 
-      const data = await fetchWithAuth('/orders/user');
-      setOrders(Array.isArray(data) ? data : []);
+      console.log('Fetching orders for user:', user.id);
+      const data = await fetchWithAuth(`/orders/user/${user.id}`);
+      
+      if (data && Array.isArray(data)) {
+        setOrders(data);
+      } else {
+        setOrders([]);
+        console.warn('Unexpected orders response format:', data);
+      }
       
     } catch (error) {
       console.error('Error fetching orders:', error);
-      const errorMessage = error.message.includes('HTTP error') 
+      const errorMessage = error.message.includes('Network error') 
+        ? 'Cannot connect to server. Please check if the backend is running.'
+        : error.message.includes('HTTP error') 
         ? 'Server error. Please try again later.' 
         : error.message;
+      
       setError(`Failed to fetch orders: ${errorMessage}`);
       setOrders([]);
     } finally {
@@ -556,14 +590,24 @@ const UserDashboard = () => {
       setLoading(true);
       setError('');
       
+      console.log('Fetching products...');
       const data = await fetchWithAuth('/products');
-      setProducts(Array.isArray(data) ? data : []);
+      
+      if (data && Array.isArray(data)) {
+        setProducts(data);
+      } else {
+        setProducts([]);
+        console.warn('Unexpected products response format:', data);
+      }
       
     } catch (error) {
       console.error('Error fetching products:', error);
-      const errorMessage = error.message.includes('HTTP error') 
+      const errorMessage = error.message.includes('Network error') 
+        ? 'Cannot connect to server. Please check if the backend is running.'
+        : error.message.includes('HTTP error') 
         ? 'Server error. Please try again later.' 
         : error.message;
+      
       setError(`Failed to fetch products: ${errorMessage}`);
       setProducts([]);
     } finally {
@@ -620,6 +664,7 @@ const UserDashboard = () => {
     return cart.reduce((count, item) => count + item.quantity, 0);
   }, [cart]);
 
+  // Enhanced checkout with better error handling
   const handleCheckout = useCallback(async (e) => {
     e.preventDefault();
     
@@ -634,7 +679,7 @@ const UserDashboard = () => {
       return;
     }
 
-    if (!user?.email) {
+    if (!user?.id) {
       alert("User information is missing. Please log in again.");
       return;
     }
@@ -648,6 +693,7 @@ const UserDashboard = () => {
         customer_phone: customerInfo.phone.trim(),
         customer_address: customerInfo.address.trim(),
         customer_email: user.email,
+        user_id: user.id,
         cart: cart.map(item => ({
           id: item.id,
           product_name: item.product_name,
@@ -660,10 +706,14 @@ const UserDashboard = () => {
         status: 'pending'
       };
 
+      console.log('Submitting order:', orderData);
+      
       const data = await fetchWithAuth('/orders', {
         method: 'POST',
         body: JSON.stringify(orderData)
       });
+
+      console.log('Order response:', data);
 
       // Success handling
       if (selectedPayment === 'momo') {
@@ -685,15 +735,18 @@ const UserDashboard = () => {
 
     } catch (err) {
       console.error("Checkout error:", err);
-      const errorMessage = err.message.includes('HTTP error') 
+      const errorMessage = err.message.includes('Network error') 
+        ? 'Cannot connect to server. Please check your connection.'
+        : err.message.includes('HTTP error') 
         ? 'Server error. Please try again later.' 
         : err.message;
+      
       setError(`Failed to place order: ${errorMessage}`);
       alert(`Failed to place order: ${errorMessage}`);
     } finally {
       setLoading(false);
     }
-  }, [customerInfo, cart, calculateTotal, user, selectedPayment, fetchWithAuth]);
+  }, [customerInfo, cart, calculateTotal, user, selectedPayment]);
 
   const handleProfileUpdate = async (updatedUser) => {
     try {
@@ -756,13 +809,36 @@ const UserDashboard = () => {
     setTrackingOrder(null);
   }, []);
 
-  // Effect to fetch data when tabs change
-  useEffect(() => {
-    if (activeTab === 'orders') {
-      fetchUserOrders();
-    } else if (activeTab === 'menu') {
-      fetchProducts();
+  // Add this function to test API connection
+  const testAPIConnection = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE_URL}/health`);
+      if (response.ok) {
+        console.log('API connection successful');
+        setMessage('API connection successful!');
+      } else {
+        throw new Error(`API returned status: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('API connection test failed:', error);
+      setError(`API connection failed: ${error.message}`);
+    } finally {
+      setLoading(false);
     }
+  };
+
+  // Enhanced data fetching with retry logic
+  useEffect(() => {
+    const fetchData = async () => {
+      if (activeTab === 'orders') {
+        await fetchUserOrders();
+      } else if (activeTab === 'menu') {
+        await fetchProducts();
+      }
+    };
+
+    fetchData();
   }, [activeTab]);
 
   // Effect to update customer info when user changes
@@ -952,17 +1028,37 @@ const UserDashboard = () => {
 
       {/* Enhanced Main Content */}
       <main className="container mx-auto px-4 sm:px-6 py-8 sm:py-12">
-        {/* Enhanced Error Message */}
+        {/* Enhanced Error Message with Retry Buttons */}
         {error && (
-          <div className="mb-6 bg-red-100 border border-red-400 text-red-700 px-6 py-4 rounded-xl flex items-center animate-shake">
-            <FontAwesomeIcon icon={faExclamationTriangle} className="mr-4 text-xl flex-shrink-0" />
-            <span className="flex-1 text-base">{error}</span>
-            <button 
-              onClick={() => setError('')}
-              className="ml-4 text-red-500 hover:text-red-700 p-2 rounded-full hover:bg-red-50 transition-colors flex-shrink-0"
-            >
-              <FontAwesomeIcon icon={faTimes} className="text-xl" />
-            </button>
+          <div className="mb-6 bg-red-100 border border-red-400 text-red-700 px-6 py-4 rounded-xl flex flex-col sm:flex-row items-center animate-shake">
+            <div className="flex items-center flex-1 mb-4 sm:mb-0">
+              <FontAwesomeIcon icon={faExclamationTriangle} className="mr-4 text-xl flex-shrink-0" />
+              <span className="flex-1 text-base">{error}</span>
+            </div>
+            <div className="flex space-x-3">
+              <button 
+                onClick={testAPIConnection}
+                className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg transition-colors text-sm"
+              >
+                Test Connection
+              </button>
+              <button 
+                onClick={() => {
+                  setError('');
+                  if (activeTab === 'orders') fetchUserOrders();
+                  else if (activeTab === 'menu') fetchProducts();
+                }}
+                className="bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg transition-colors text-sm"
+              >
+                Retry
+              </button>
+              <button 
+                onClick={() => setError('')}
+                className="text-red-500 hover:text-red-700 p-2 rounded-full hover:bg-red-50 transition-colors flex-shrink-0"
+              >
+                <FontAwesomeIcon icon={faTimes} className="text-xl" />
+              </button>
+            </div>
           </div>
         )}
 
