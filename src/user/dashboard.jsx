@@ -494,18 +494,11 @@ const UserDashboard = () => {
   const [selectedPayment, setSelectedPayment] = useState('momo');
   const [showUserMenu, setShowUserMenu] = useState(false);
 
-  // Fixed API URL construction
-  const getApiUrl = (endpoint) => {
-    // Ensure proper URL construction without double slashes
-    const baseUrl = API_URL?.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
-    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-    return `${baseUrl}${cleanEndpoint}`;
-  };
+  // Use the Render backend URL directly
+  const API_BASE_URL = 'https://backend-wgm2.onrender.com/api';
 
-  // Enhanced fetch function with better error handling and debugging
+  // Enhanced fetch function with better error handling
   const fetchWithAuth = async (url, options = {}) => {
-    const fullUrl = getApiUrl(url);
-    
     const headers = {
       'Content-Type': 'application/json',
       ...options.headers,
@@ -517,32 +510,29 @@ const UserDashboard = () => {
       headers['user-email'] = user.email || '';
     }
 
-    console.log(`Making API request to: ${fullUrl}`);
-    console.log('Headers:', headers);
-
     try {
-      const response = await fetch(fullUrl, {
+      console.log(`Making request to: ${API_BASE_URL}${url}`);
+      const response = await fetch(`${API_BASE_URL}${url}`, {
         ...options,
         headers,
       });
 
-      console.log(`Response status: ${response.status} ${response.statusText}`);
+      console.log(`Response status: ${response.status}`);
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('API Error Response:', errorText);
-        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+        console.error('Server error response:', errorText);
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const data = await response.json();
-      console.log('API Success Response:', data);
+      console.log('Success response:', data);
       return data;
 
     } catch (error) {
       console.error(`Fetch error for ${url}:`, error);
-      // More specific error messages
       if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-        throw new Error('Network error: Cannot connect to server. Please check if the server is running.');
+        throw new Error('Cannot connect to server. Please check your internet connection and try again.');
       }
       throw error;
     }
@@ -575,7 +565,7 @@ const UserDashboard = () => {
       setLoading(true);
       setError('');
       
-      console.log('Fetching products...');
+      console.log('Fetching products from:', `${API_BASE_URL}/products`);
       const data = await fetchWithAuth('/products');
       setProducts(Array.isArray(data) ? data : []);
       
@@ -592,16 +582,19 @@ const UserDashboard = () => {
   const testApiConnection = async () => {
     try {
       setLoading(true);
-      const response = await fetch(getApiUrl('/health'));
+      const response = await fetch(`${API_BASE_URL}/health`);
       if (response.ok) {
-        console.log('API connection test: SUCCESS');
+        const data = await response.json();
+        console.log('API health check:', data);
+        setMessage('API connection successful!');
         return true;
       } else {
-        console.log('API connection test: FAILED');
+        setError('API health check failed');
         return false;
       }
     } catch (error) {
-      console.error('API connection test: ERROR', error);
+      console.error('API connection test failed:', error);
+      setError(`API connection failed: ${error.message}`);
       return false;
     } finally {
       setLoading(false);
@@ -814,7 +807,7 @@ const UserDashboard = () => {
 
   // Test API connection on component mount
   useEffect(() => {
-    console.log('API_URL from config:', API_URL);
+    console.log('Using API URL:', API_BASE_URL);
     testApiConnection();
   }, []);
 
@@ -839,9 +832,9 @@ const UserDashboard = () => {
         </div>
       )}
 
-      {/* Debug Info - Remove in production */}
+      {/* Debug Info */}
       <div className="fixed bottom-4 right-4 bg-blue-500 text-white p-2 rounded text-xs opacity-70">
-        API: {API_URL ? 'Configured' : 'Missing'}
+        API: {API_BASE_URL}
       </div>
 
       {/* Enhanced Header */}
@@ -1023,21 +1016,20 @@ const UserDashboard = () => {
         )}
 
         {/* Connection Troubleshooting */}
-        {error && error.includes('Network error') && (
+        {error && error.includes('Cannot connect to server') && (
           <div className="mb-6 bg-yellow-100 border border-yellow-400 text-yellow-700 px-6 py-4 rounded-xl">
-            <h4 className="font-bold mb-2">Connection Issue Detected</h4>
-            <p className="mb-2">Please check:</p>
-            <ul className="list-disc list-inside text-sm space-y-1">
-              <li>Is your backend server running?</li>
-              <li>Check if API_URL is correctly configured</li>
-              <li>Verify CORS settings on the server</li>
-              <li>Check browser console for detailed errors</li>
+            <h4 className="font-bold mb-2">Connection Issue</h4>
+            <p className="mb-2">Unable to connect to the server. Please check:</p>
+            <ul className="list-disc list-inside text-sm space-y-1 mb-3">
+              <li>Your internet connection</li>
+              <li>If the backend server is running</li>
+              <li>Browser console for detailed errors</li>
             </ul>
             <button 
               onClick={testApiConnection}
-              className="mt-3 bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded text-sm"
+              className="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2 rounded text-sm"
             >
-              Test Connection
+              Test Connection Again
             </button>
           </div>
         )}
