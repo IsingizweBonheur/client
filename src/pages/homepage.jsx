@@ -28,7 +28,7 @@ const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Backend URL for local uploaded images
-const BACKEND_URL = "http://localhost:5000";
+const BACKEND_URL = "https://backend-wgm2.onrender.com";
 
 // Phone numbers
 const PHONE_NUMBERS = {
