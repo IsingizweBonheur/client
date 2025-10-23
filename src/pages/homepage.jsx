@@ -75,7 +75,17 @@ const useUser = () => {
     localStorage.removeItem('user');
   };
 
-  return { user, login};
+  return { user, login, logout };
+};
+
+// Fallback images
+const FALLBACK_IMAGES = {
+  burger: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
+  pizza: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
+  fries: "https://images.unsplash.com/photo-1573080496219-bb080dd4f877?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
+  chicken: "https://images.unsplash.com/photo-1626645738196-c2a7c87a8f58?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
+  drink: "https://images.unsplash.com/photo-1544145945-f90425340c7e?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
+  default: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80"
 };
 
 // Optimized ProductImage component with React.memo
@@ -311,7 +321,6 @@ const AboutSection = React.memo(() => {
     threshold: 0.1,
   });
 
-
   return (
     <section id="about" className="py-16 bg-gradient-to-br from-orange-50 to-red-50">
       <div className="container mx-auto px-4">
@@ -441,6 +450,238 @@ const ServicesSection = React.memo(() => {
   );
 });
 
+// Enhanced Header with fixed positioning
+const Header = React.memo(({
+  user,
+  searchQuery,
+  onSearchChange,
+  onToggleCart,
+  onRefresh,
+  isRefreshing,
+  cartItemCount,
+  isMobileMenuOpen,
+  onToggleMobileMenu,
+  onLoginLogout
+}) => {
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  // Handle scroll effect for header background
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollTop = window.scrollY;
+      setIsScrolled(scrollTop > 20);
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  return (
+    <motion.header 
+      initial={{ y: -100 }}
+      animate={{ y: 0 }}
+      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        isScrolled 
+          ? 'bg-white/95 backdrop-blur-md shadow-lg border-b border-orange-100/50' 
+          : 'bg-white shadow-sm border-b border-orange-100'
+      }`}
+    >
+      <div className="container mx-auto px-3 sm:px-4 py-3">
+        <div className="flex items-center justify-between gap-4">
+          {/* Logo and Mobile Menu */}
+          <div className="flex items-center space-x-3 flex-1">
+            <motion.button 
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              className="lg:hidden p-2 rounded-lg hover:bg-orange-50 transition-colors"
+              onClick={onToggleMobileMenu}
+            >
+              <FontAwesomeIcon icon={faBars} className="text-orange-500 text-xl" />
+            </motion.button>
+            
+            <motion.div 
+              className="flex items-center space-x-3"
+              whileHover={{ scale: 1.05 }}
+            >
+              <motion.div 
+                className="bg-orange-500 p-2 sm:p-3 rounded-2xl shadow-lg"
+                whileHover={{ rotate: 360 }}
+                transition={{ duration: 0.6 }}
+              >
+                <FontAwesomeIcon icon={faHamburger} className="text-white text-lg sm:text-2xl" />
+              </motion.div>
+              <div>
+                <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-orange-600">FastFood</h1>
+                <p className="text-xs text-gray-500 hidden sm:block">Delicious & Fast</p>
+              </div>
+            </motion.div>
+          </div>
+          
+          {/* Search Bar - Hidden on mobile when menu is open */}
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.2 }}
+            className={`hidden md:block relative flex-1 max-w-lg mx-4 ${
+              isMobileMenuOpen ? 'md:hidden' : ''
+            }`}
+          >
+            <input
+              type="text"
+              placeholder="Search burgers, pizzas, drinks..."
+              className="w-full px-4 py-3 pl-12 rounded-2xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-300 bg-white text-sm sm:text-base"
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+            />
+            <FontAwesomeIcon icon={faSearch} className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 text-lg" />
+          </motion.div>
+          
+          {/* User Actions */}
+          <div className="flex items-center space-x-2 sm:space-x-3">
+            {/* User Profile / Login */}
+            <motion.button 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onLoginLogout}
+              className="flex items-center space-x-2 bg-orange-100 text-orange-600 px-3 sm:px-4 py-2 rounded-xl hover:bg-orange-200 transition-colors text-sm sm:text-base"
+            >
+              <FontAwesomeIcon icon={faUser} className="text-sm" />
+              <span className="hidden sm:inline">
+                {user ? 'Logout' : 'Login'}
+              </span>
+            </motion.button>
+
+            {/* Mobile Search Button */}
+            <motion.button 
+              whileHover={{ scale: 1.1 }}
+              whileTap={{ scale: 0.9 }}
+              className="md:hidden p-2 sm:p-3 rounded-2xl hover:bg-orange-50 transition-colors"
+              onClick={() => {
+                // Toggle mobile search visibility
+                const mobileSearch = document.querySelector('.mobile-search');
+                if (mobileSearch) {
+                  mobileSearch.classList.toggle('hidden');
+                }
+              }}
+            >
+              <FontAwesomeIcon icon={faSearch} className="text-orange-500 text-lg" />
+            </motion.button>
+
+            {/* Cart Button */}
+            <div className="relative">
+              <motion.button 
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                className="bg-orange-500 p-2 sm:p-3 md:p-4 rounded-2xl hover:bg-orange-600 transition-all duration-300 shadow-lg hover:shadow-xl"
+                onClick={onToggleCart}
+              >
+                <FontAwesomeIcon icon={faShoppingCart} className="text-white text-lg sm:text-xl" />
+              </motion.button>
+              {cartItemCount > 0 && (
+                <motion.span 
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 sm:w-6 sm:h-6 md:w-7 md:h-7 flex items-center justify-center text-xs font-bold animate-pulse shadow-lg"
+                >
+                  {cartItemCount > 99 ? '99+' : cartItemCount}
+                </motion.span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile Search Bar - Always visible on mobile */}
+        <motion.div 
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: "auto" }}
+          className="mt-3 md:hidden mobile-search"
+        >
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search burgers, pizzas, drinks..."
+              className="w-full px-4 py-3 pl-12 rounded-2xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-300 bg-white text-sm"
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+            />
+            <FontAwesomeIcon icon={faSearch} className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" />
+          </div>
+        </motion.div>
+
+        {/* Mobile Menu */}
+        <AnimatePresence>
+          {isMobileMenuOpen && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mt-4 md:hidden bg-white/95 backdrop-blur-md rounded-2xl shadow-lg p-4 border border-orange-100 overflow-hidden"
+            >
+              <div className="space-y-3">
+                <motion.button 
+                  whileHover={{ x: 10 }}
+                  onClick={() => {
+                    document.getElementById('products-section')?.scrollIntoView({ behavior: 'smooth' });
+                    onToggleMobileMenu();
+                  }}
+                  className="w-full text-left px-4 py-3 rounded-xl bg-orange-50 text-orange-600 font-semibold hover:bg-orange-100 transition-colors text-sm"
+                >
+                  Browse Menu
+                </motion.button>
+                {user ? (
+                  <>
+                    <motion.button 
+                      whileHover={{ x: 10 }}
+                      onClick={() => {
+                        window.location.href = '/userdashboard';
+                        onToggleMobileMenu();
+                      }}
+                      className="w-full text-left px-4 py-3 rounded-xl bg-blue-50 text-orange-500 font-semibold hover:bg-blue-100 transition-colors text-sm"
+                    >
+                      My Dashboard
+                    </motion.button>
+                    <motion.button 
+                      whileHover={{ x: 10 }}
+                      onClick={() => {
+                        onLoginLogout();
+                        onToggleMobileMenu();
+                      }}
+                      className="w-full text-left px-4 py-3 rounded-xl bg-red-50 text-red-600 font-semibold hover:bg-red-100 transition-colors text-sm"
+                    >
+                      Logout
+                    </motion.button>
+                  </>
+                ) : (
+                  <motion.button 
+                    whileHover={{ x: 10 }}
+                    onClick={() => {
+                      onLoginLogout();
+                      onToggleMobileMenu();
+                    }}
+                    className="w-full text-left px-4 py-3 rounded-xl bg-green-50 text-green-600 font-semibold hover:bg-green-100 transition-colors text-sm"
+                  >
+                    Login / Sign Up
+                  </motion.button>
+                )}
+                <div className="border-t border-gray-200 pt-3">
+                  <a 
+                    href={`tel:${PHONE_NUMBERS.call}`} 
+                    className="flex items-center space-x-3 px-4 py-2 text-gray-600 hover:text-orange-600 transition-colors text-sm"
+                    onClick={onToggleMobileMenu}
+                  >
+                    <FontAwesomeIcon icon={faPhone} className="text-orange-500" />
+                    <span>Call Us: {PHONE_NUMBERS.call}</span>
+                  </a>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    </motion.header>
+  );
+});
+
 // Enhanced Hero Section with Swiper
 const HeroSection = React.memo(({ user }) => {
   const heroSlides = [
@@ -462,7 +703,7 @@ const HeroSection = React.memo(({ user }) => {
   ];
 
   return (
-    <section className="relative h-screen overflow-hidden">
+    <section className="relative h-screen overflow-hidden mt-0">
       <Swiper
         modules={[Autoplay, Pagination, Navigation]}
         autoplay={{ delay: 5000, disableOnInteraction: false }}
@@ -732,193 +973,6 @@ const ProductsSection = React.memo(({
     </main>
   );
 });
-
-// Enhanced Header with animations
-const Header = React.memo(({
-  user,
-  searchQuery,
-  onSearchChange,
-  onToggleCart,
-  onRefresh,
-  isRefreshing,
-  cartItemCount,
-  isMobileMenuOpen,
-  onToggleMobileMenu,
-  onLoginLogout
-}) => (
-  <motion.header 
-    initial={{ y: -100 }}
-    animate={{ y: 0 }}
-    className="bg-white shadow-lg sticky top-0 z-40 border-b border-orange-100"
-  >
-    <div className="container mx-auto px-3 sm:px-4 py-3">
-      <div className="flex items-center justify-between gap-4">
-        {/* Logo and Mobile Menu */}
-        <div className="flex items-center space-x-3 flex-1">
-          <motion.button 
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            className="lg:hidden p-2 rounded-lg hover:bg-orange-50 transition-colors"
-            onClick={onToggleMobileMenu}
-          >
-            <FontAwesomeIcon icon={faBars} className="text-orange-500 text-xl" />
-          </motion.button>
-          
-          <motion.div 
-            className="flex items-center space-x-3"
-            whileHover={{ scale: 1.05 }}
-          >
-            <motion.div 
-              className="bg-orange-500 p-2 sm:p-3 rounded-2xl shadow-lg"
-              whileHover={{ rotate: 360 }}
-              transition={{ duration: 0.6 }}
-            >
-              <FontAwesomeIcon icon={faHamburger} className="text-white text-lg sm:text-2xl" />
-            </motion.div>
-            <div>
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-orange-600">FastFood</h1>
-              <p className="text-xs text-gray-500 hidden sm:block">Delicious & Fast</p>
-            </div>
-          </motion.div>
-        </div>
-        
-        {/* Search Bar */}
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.2 }}
-          className="hidden md:block relative flex-1 max-w-lg mx-4"
-        >
-          <input
-            type="text"
-            placeholder="Search burgers, pizzas, drinks..."
-            className="w-full px-4 py-3 pl-12 rounded-2xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-300 bg-white text-sm sm:text-base"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-          />
-          <FontAwesomeIcon icon={faSearch} className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 text-lg" />
-        </motion.div>
-        
-        {/* User Actions */}
-        <div className="flex items-center space-x-3">
-          {/* User Profile / Login */}
-          <motion.button 
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={onLoginLogout}
-            className="flex items-center space-x-2 bg-orange-100 text-orange-600 px-3 sm:px-4 py-2 rounded-xl hover:bg-orange-200 transition-colors"
-          >
-            <FontAwesomeIcon icon={faUser} />
-            <span className="hidden sm:inline">
-              {user ? 'Logout' : 'Login'}
-            </span>
-          </motion.button>
-
-          <motion.button 
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.9 }}
-            className="md:hidden p-3 rounded-2xl hover:bg-orange-50 transition-colors"
-          >
-            <FontAwesomeIcon icon={faSearch} className="text-orange-500 text-lg" />
-          </motion.button>
-
-          {/* Cart Button */}
-          <div className="relative">
-            <motion.button 
-              whileHover={{ scale: 1.1 }}
-              whileTap={{ scale: 0.9 }}
-              className="bg-orange-500 p-3 sm:p-4 rounded-2xl hover:bg-orange-600 transition-all duration-300 shadow-lg hover:shadow-xl"
-              onClick={onToggleCart}
-            >
-              <FontAwesomeIcon icon={faShoppingCart} className="text-white text-lg sm:text-xl" />
-            </motion.button>
-            {cartItemCount > 0 && (
-              <motion.span 
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center text-xs sm:text-sm font-bold animate-pulse shadow-lg"
-              >
-                {cartItemCount}
-              </motion.span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Mobile Search Bar */}
-      <motion.div 
-        initial={{ opacity: 0, height: 0 }}
-        animate={{ opacity: 1, height: "auto" }}
-        className="mt-3 md:hidden"
-      >
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="Search burgers, pizzas, drinks..."
-            className="w-full px-4 py-3 pl-12 rounded-2xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-300 bg-white text-sm"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-          />
-          <FontAwesomeIcon icon={faSearch} className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400" />
-        </div>
-      </motion.div>
-
-      {/* Mobile Menu */}
-      <AnimatePresence>
-        {isMobileMenuOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="mt-4 md:hidden bg-white rounded-2xl shadow-lg p-4 border border-orange-100 overflow-hidden"
-          >
-            <div className="space-y-3">
-              <motion.button 
-                whileHover={{ x: 10 }}
-                onClick={() => document.getElementById('products-section')?.scrollIntoView({ behavior: 'smooth' })}
-                className="w-full text-left px-4 py-3 rounded-xl bg-orange-50 text-orange-600 font-semibold hover:bg-orange-100 transition-colors"
-              >
-                Browse Menu
-              </motion.button>
-              {user ? (
-                <>
-                  <motion.button 
-                    whileHover={{ x: 10 }}
-                    onClick={() => window.location.href = '/userdashboard'}
-                    className="w-full text-left px-4 py-3 rounded-xl bg-blue-50 text-orange-500 font-semibold hover:bg-blue-100 transition-colors"
-                  >
-                    My Dashboard
-                  </motion.button>
-                  <motion.button 
-                    whileHover={{ x: 10 }}
-                    onClick={onLoginLogout}
-                    className="w-full text-left px-4 py-3 rounded-xl bg-red-50 text-red-600 font-semibold hover:bg-red-100 transition-colors"
-                  >
-                    Logout
-                  </motion.button>
-                </>
-              ) : (
-                <motion.button 
-                  whileHover={{ x: 10 }}
-                  onClick={onLoginLogout}
-                  className="w-full text-left px-4 py-3 rounded-xl bg-green-50 text-green-600 font-semibold hover:bg-green-100 transition-colors"
-                >
-                  Login / Sign Up
-                </motion.button>
-              )}
-              <div className="border-t pt-3">
-                <a href={`tel:${PHONE_NUMBERS.call}`} className="flex items-center space-x-3 px-4 py-2 text-gray-600 hover:text-orange-600 transition-colors">
-                  <FontAwesomeIcon icon={faPhone} className="text-orange-500" />
-                  <span>Call Us: {PHONE_NUMBERS.call}</span>
-                </a>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  </motion.header>
-));
 
 // Enhanced Footer with animations
 const Footer = React.memo(() => {
@@ -1198,7 +1252,7 @@ const CartModal = React.memo(({
     initial={{ opacity: 0 }}
     animate={{ opacity: 1 }}
     exit={{ opacity: 0 }}
-    className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-sm"
+    className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 backdrop-blur-sm"
   >
     <motion.div
       initial={{ scale: 0.8, opacity: 0 }}
@@ -1369,7 +1423,7 @@ const CheckoutModal = React.memo(({
     initial={{ opacity: 0 }}
     animate={{ opacity: 1 }}
     exit={{ opacity: 0 }}
-    className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-sm"
+    className="fixed inset-0 z-60 flex items-center justify-center p-3 sm:p-4 backdrop-blur-sm"
   >
     <motion.div
       initial={{ scale: 0.8, opacity: 0 }}
@@ -1772,7 +1826,8 @@ export default function HomePage() {
             initial={{ opacity: 0, y: -100 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -100 }}
-            className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg z-50 mx-4 text-sm sm:text-base sm:px-6"
+            className="fixed top-20 left-1/2 transform -translate-x-1/2 bg-green-500 text-white px-4 py-3 rounded-lg shadow-lg z-50 mx-4 text-sm sm:text-base sm:px-6"
+            style={{ marginTop: '1rem' }}
           >
             ✅ Order placed successfully! We'll contact you soon.
           </motion.div>
@@ -1793,70 +1848,74 @@ export default function HomePage() {
         onLoginLogout={handleLoginLogout}
       />
 
-      {/* Shopping Cart */}
-      <AnimatePresence>
-        {showCart && (
-          <CartModal
-            cart={cart}
-            onClose={() => setShowCart(false)}
-            onUpdateQuantity={updateQuantity}
-            onRemoveFromCart={removeFromCart}
-            onCheckout={() => {
-              setShowCart(false);
-              setShowCheckout(true);
-            }}
-            onWhatsAppOrder={handleWhatsAppOrder}
-            cartSummary={cartSummary}
-            formatPrice={formatPrice}
-            user={user}
-          />
-        )}
-      </AnimatePresence>
+      {/* Main Content with padding for fixed header */}
+      <div className="pt-16 sm:pt-20">
+        
+        {/* Shopping Cart */}
+        <AnimatePresence>
+          {showCart && (
+            <CartModal
+              cart={cart}
+              onClose={() => setShowCart(false)}
+              onUpdateQuantity={updateQuantity}
+              onRemoveFromCart={removeFromCart}
+              onCheckout={() => {
+                setShowCart(false);
+                setShowCheckout(true);
+              }}
+              onWhatsAppOrder={handleWhatsAppOrder}
+              cartSummary={cartSummary}
+              formatPrice={formatPrice}
+              user={user}
+            />
+          )}
+        </AnimatePresence>
 
-      {/* Checkout Modal */}
-      <AnimatePresence>
-        {showCheckout && (
-          <CheckoutModal
-            customerInfo={customerInfo}
-            onCustomerInfoChange={setCustomerInfo}
-            onClose={() => setShowCheckout(false)}
-            onSubmit={handleCheckout}
-            onWhatsAppOrder={handleWhatsAppOrder}
-            isLoading={isLoading}
-            cartSummary={cartSummary}
-            formatPrice={formatPrice}
-            user={user}
-          />
-        )}
-      </AnimatePresence>
+        {/* Checkout Modal */}
+        <AnimatePresence>
+          {showCheckout && (
+            <CheckoutModal
+              customerInfo={customerInfo}
+              onCustomerInfoChange={setCustomerInfo}
+              onClose={() => setShowCheckout(false)}
+              onSubmit={handleCheckout}
+              onWhatsAppOrder={handleWhatsAppOrder}
+              isLoading={isLoading}
+              cartSummary={cartSummary}
+              formatPrice={formatPrice}
+              user={user}
+            />
+          )}
+        </AnimatePresence>
 
-      {/* Hero Section */}
-      <HeroSection user={user} />
+        {/* Hero Section */}
+        <HeroSection user={user} />
 
-      {/* About Section */}
-      <AboutSection />
+        {/* About Section */}
+        <AboutSection />
 
-      {/* Services Section */}
-      <ServicesSection />
+        {/* Services Section */}
+        <ServicesSection />
 
-      {/* Products Section */}
-      <ProductsSection
-        products={filteredProducts}
-        allProducts={products}
-        searchQuery={searchQuery}
-        onSearchClear={() => setSearchQuery("")}
-        onRefresh={refreshProducts}
-        isRefreshing={isRefreshing}
-        onAddToCart={addToCart}
-        debugInfo={debugInfo}
-        user={user}
-      />
+        {/* Products Section */}
+        <ProductsSection
+          products={filteredProducts}
+          allProducts={products}
+          searchQuery={searchQuery}
+          onSearchClear={() => setSearchQuery("")}
+          onRefresh={refreshProducts}
+          isRefreshing={isRefreshing}
+          onAddToCart={addToCart}
+          debugInfo={debugInfo}
+          user={user}
+        />
 
-      {/* Contact & Info Section */}
-      <ContactSection />
+        {/* Contact & Info Section */}
+        <ContactSection />
 
-      {/* Footer */}
-      <Footer />
+        {/* Footer */}
+        <Footer />
+      </div>
 
       {/* Add custom animation and responsive utilities */}
       <style jsx>{`
@@ -1898,6 +1957,31 @@ export default function HomePage() {
         
         .swiper-button-next:after, .swiper-button-prev:after {
           font-size: 1.5rem;
+        }
+
+        /* Ensure modals are above fixed header */
+        .fixed.inset-0 {
+          z-index: 60;
+        }
+
+        /* Mobile search visibility */
+        @media (max-width: 767px) {
+          .mobile-search {
+            display: block !important;
+          }
+        }
+
+        /* Improve touch targets on mobile */
+        @media (max-width: 768px) {
+          button, a {
+            min-height: 44px;
+            min-width: 44px;
+          }
+        }
+
+        /* Prevent horizontal scroll */
+        body {
+          overflow-x: hidden;
         }
       `}</style>
     </div>
