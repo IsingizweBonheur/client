@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { API_URL } from "../config";
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { 
   faUser, faEnvelope, faLock, faSignInAlt, 
   faUserPlus, faSpinner, faArrowLeft, faHamburger,
   faKey, faCheckCircle, faExclamationTriangle
 } from '@fortawesome/free-solid-svg-icons';
+
+// API configuration
+const API_URL = "https://backend-wgm2.onrender.com/api";
 
 // User context simulation
 const useUser = () => {
@@ -72,7 +74,8 @@ const UserLogin = () => {
   const [messageType, setMessageType] = useState('');
   const { login } = useUser();
 
-  const API_BASE_URL = API_URL || 'http://localhost:5000/api';
+  // Use API_URL directly
+  const API_BASE_URL = API_URL;
 
   // Clear all messages and errors
   const clearMessages = () => {
@@ -226,10 +229,10 @@ const UserLogin = () => {
       showMessage(data.message, 'success');
 
       if (isLogin) {
-        // Store user data and redirect to dashboard
+        // Store user data and redirect
         login(data.user);
         setTimeout(() => {
-          window.location.href = '/userdashboard';
+          window.location.replace('/userdashboard');
         }, 1500);
       } else {
         // Switch to login after successful registration
