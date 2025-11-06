@@ -108,17 +108,6 @@ const ProductImage = React.memo(({ product, className = "h-40 sm:h-48 w-full obj
     return `${BACKEND_URL}${imageUrl.startsWith('/') ? imageUrl : '/' + imageUrl}?t=${Date.now()}`;
   }, []);
 
-  const getFallbackImage = useCallback((productName) => {
-    const name = productName?.toLowerCase() || '';
-    if (name.includes('burger')) return FALLBACK_IMAGES.burger;
-    if (name.includes('pizza')) return FALLBACK_IMAGES.pizza;
-    if (name.includes('fries') || name.includes('fry')) return FALLBACK_IMAGES.fries;
-    if (name.includes('chicken')) return FALLBACK_IMAGES.chicken;
-    if (name.includes('drink') || name.includes('soda') || name.includes('juice')) return FALLBACK_IMAGES.drink;
-    
-    return FALLBACK_IMAGES.default;
-  }, []);
-
   useEffect(() => {
     if (!product.image_url) {
       setImgSrc(getFallbackImage(product.product_name));
