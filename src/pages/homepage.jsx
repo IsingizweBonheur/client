@@ -77,17 +77,6 @@ const useUser = () => {
 
   return { user, login, logout };
 };
-
-// Fallback images
-const FALLBACK_IMAGES = {
-  burger: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
-  pizza: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
-  fries: "https://images.unsplash.com/photo-1573080496219-bb080dd4f877?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
-  chicken: "https://images.unsplash.com/photo-1626645738196-c2a7c87a8f58?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
-  drink: "https://images.unsplash.com/photo-1544145945-f90425340c7e?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
-  default: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80"
-};
-
 // Optimized ProductImage component with React.memo
 const ProductImage = React.memo(({ product, className = "h-40 sm:h-48 w-full object-cover" }) => {
   const [imgSrc, setImgSrc] = useState("");
