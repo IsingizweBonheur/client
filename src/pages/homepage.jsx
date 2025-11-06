@@ -27,9 +27,6 @@ const supabaseUrl = "https://kuxrbtxmiwjuabxfbqfx.supabase.co";
 const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt1eHJidHhtaXdqdWFieGZicWZ4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA1NjMyMjIsImV4cCI6MjA3NjEzOTIyMn0.AwJEEPyOnq7BFB1PDlXFLt-VC3J5cDilYa3PYnu_048"
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Backend URL for local uploaded images
-const BACKEND_URL = "https://backend-wgm2.onrender.com";
-
 // Phone numbers
 const PHONE_NUMBERS = {
   whatsapp: "250788295765",
@@ -77,8 +74,21 @@ const useUser = () => {
 
   return { user, login, logout };
 };
-// Optimized ProductImage component with React.memo
-const ProductImage = React.memo(({ product, className = "h-40 sm:h-48 w-full object-cover" }) => {
+
+// Centralized Image Utilities
+const FALLBACK_IMAGES = {
+  burger: "https://images.unsplash.com/photo-1568901346375-23c9450c58cd?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
+  pizza: "https://images.unsplash.com/photo-1565299624946-b28f40a0ae38?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
+  fries: "https://images.unsplash.com/photo-1573080496219-bb080dd4f877?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
+  chicken: "https://images.unsplash.com/photo-1626645738196-c2a7c87a8f58?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
+  drink: "https://images.unsplash.com/photo-1544145945-f90425340c7e?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80",
+  default: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?ixlib=rb-4.0.3&auto=format&fit=crop&w=500&q=80"
+};
+
+const BACKEND_URL = "https://backend-wgm2.onrender.com";
+
+// Centralized Image Hook
+const useProductImage = (product) => {
   const [imgSrc, setImgSrc] = useState("");
   const [hasError, setHasError] = useState(false);
 
@@ -123,6 +133,17 @@ const ProductImage = React.memo(({ product, className = "h-40 sm:h-48 w-full obj
     setHasError(true);
     setImgSrc(getFallbackImage(product.product_name));
   }, [product.product_name, getFallbackImage]);
+
+  return {
+    imgSrc,
+    hasError,
+    handleError
+  };
+};
+
+// Optimized ProductImage component with React.memo
+const ProductImage = React.memo(({ product, className = "h-40 sm:h-48 w-full object-cover" }) => {
+  const { imgSrc, handleError } = useProductImage(product);
 
   return (
     <motion.img
@@ -216,6 +237,8 @@ ProductCard.displayName = 'ProductCard';
 
 // Memoized Cart Item component
 const CartItem = React.memo(({ item, onUpdateQuantity, onRemove, user }) => {
+  const { imgSrc, handleError } = useProductImage(item);
+
   const handleDecrease = useCallback(() => {
     if (!user) {
       window.location.href = '/userlogin';
@@ -256,9 +279,12 @@ const CartItem = React.memo(({ item, onUpdateQuantity, onRemove, user }) => {
       className="flex items-center space-x-3 sm:space-x-4 bg-white/80 backdrop-blur-sm p-3 sm:p-4 rounded-2xl border border-gray-200/50 hover:bg-white transition-colors"
     >
       <div className="relative">
-        <ProductImage
-          product={item}
+        <motion.img
+          src={imgSrc}
+          alt={item.product_name}
           className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xl flex-shrink-0 bg-gray-200"
+          onError={handleError}
+          loading="lazy"
         />
       </div>
       <div className="flex-1 min-w-0">
@@ -1975,4 +2001,4 @@ export default function HomePage() {
       `}</style>
     </div>
   );
-} 
+}
