@@ -87,7 +87,7 @@ const FALLBACK_IMAGES = {
 
 const BACKEND_URL = "https://backend-wgm2.onrender.com";
 
-// Centralized Image Hook
+// Centralized Image Hook - SINGLE SOURCE OF TRUTH
 const useProductImage = (product) => {
   const [imgSrc, setImgSrc] = useState("");
   const [hasError, setHasError] = useState(false);
@@ -119,6 +119,8 @@ const useProductImage = (product) => {
   }, []);
 
   useEffect(() => {
+    if (!product) return;
+    
     if (!product.image_url) {
       setImgSrc(getFallbackImage(product.product_name));
       return;
@@ -127,12 +129,13 @@ const useProductImage = (product) => {
     if (product.image_url) {
       setImgSrc(getImageUrl(product.image_url));
     }
-  }, [product.image_url, product.product_name, getImageUrl, getFallbackImage]);
+  }, [product, getImageUrl, getFallbackImage]);
 
   const handleError = useCallback(() => {
+    if (!product) return;
     setHasError(true);
     setImgSrc(getFallbackImage(product.product_name));
-  }, [product.product_name, getFallbackImage]);
+  }, [product, getFallbackImage]);
 
   return {
     imgSrc,
@@ -141,9 +144,15 @@ const useProductImage = (product) => {
   };
 };
 
-// Optimized ProductImage component with React.memo
-const ProductImage = React.memo(({ product, className = "h-40 sm:h-48 w-full object-cover" }) => {
+// Unified ProductImage component - USED EVERYWHERE
+const ProductImage = React.memo(({ 
+  product, 
+  className = "h-40 sm:h-48 w-full object-cover",
+  withHoverEffect = true 
+}) => {
   const { imgSrc, handleError } = useProductImage(product);
+
+  if (!product) return null;
 
   return (
     <motion.img
@@ -152,7 +161,7 @@ const ProductImage = React.memo(({ product, className = "h-40 sm:h-48 w-full obj
       className={className}
       onError={handleError}
       loading="lazy"
-      whileHover={{ scale: 1.05 }}
+      whileHover={withHoverEffect ? { scale: 1.05 } : {}}
       transition={{ duration: 0.3 }}
     />
   );
@@ -235,10 +244,8 @@ const ProductCard = React.memo(({ product, onAddToCart, user }) => {
 
 ProductCard.displayName = 'ProductCard';
 
-// Memoized Cart Item component
+// Memoized Cart Item component - NOW USING UNIFIED ProductImage
 const CartItem = React.memo(({ item, onUpdateQuantity, onRemove, user }) => {
-  const { imgSrc, handleError } = useProductImage(item);
-
   const handleDecrease = useCallback(() => {
     if (!user) {
       window.location.href = '/userlogin';
@@ -279,12 +286,10 @@ const CartItem = React.memo(({ item, onUpdateQuantity, onRemove, user }) => {
       className="flex items-center space-x-3 sm:space-x-4 bg-white/80 backdrop-blur-sm p-3 sm:p-4 rounded-2xl border border-gray-200/50 hover:bg-white transition-colors"
     >
       <div className="relative">
-        <motion.img
-          src={imgSrc}
-          alt={item.product_name}
+        <ProductImage
+          product={item}
           className="w-16 h-16 sm:w-20 sm:h-20 object-cover rounded-xl flex-shrink-0 bg-gray-200"
-          onError={handleError}
-          loading="lazy"
+          withHoverEffect={false}
         />
       </div>
       <div className="flex-1 min-w-0">
@@ -815,7 +820,7 @@ const HeroSection = React.memo(({ user }) => {
   );
 });
 
-// Enhanced Products Section with Featured Carousel
+// Enhanced Products Section with Featured Carousel - FIXED DUPLICATION
 const ProductsSection = React.memo(({
   products,
   allProducts,
@@ -833,6 +838,10 @@ const ProductsSection = React.memo(({
   });
 
   const featuredProducts = products.slice(0, 8); // Show first 8 as featured
+  const remainingProducts = products.slice(8); // Products not in featured section
+
+  // Check if we should show featured section
+  const shouldShowFeatured = products.length > 8;
 
   return (
     <main id="products-section" className="container mx-auto px-3 sm:px-4 py-8 sm:py-12 lg:py-16">
@@ -864,8 +873,8 @@ const ProductsSection = React.memo(({
         </div>
       </motion.div>
 
-      {/* Featured Products Carousel */}
-      {products.length > 0 && (
+      {/* Featured Products Carousel - Only show when we have more than 8 products */}
+      {shouldShowFeatured && (
         <motion.div
           initial="initial"
           animate={inView ? "animate" : "initial"}
@@ -967,6 +976,18 @@ const ProductsSection = React.memo(({
               </p>
             </motion.div>
           )}
+
+          {/* Show "All Menu Items" heading only when we have featured section */}
+          {shouldShowFeatured && remainingProducts.length > 0 && (
+            <motion.h3
+              initial="initial"
+              animate={inView ? "animate" : "initial"}
+              variants={fadeInUp}
+              className="text-xl sm:text-2xl font-bold text-gray-800 mb-6"
+            >
+              All Menu Items
+            </motion.h3>
+          )}
           
           <motion.div
             variants={staggerContainer}
@@ -974,14 +995,29 @@ const ProductsSection = React.memo(({
             animate={inView ? "animate" : "initial"}
             className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 lg:gap-8"
           >
-            {products.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                onAddToCart={onAddToCart}
-                user={user}
-              />
-            ))}
+            {/* 
+              NO DUPLICATION: 
+              - If featured section is shown: only show remaining products (products 9+)
+              - If no featured section: show all products
+            */}
+            {shouldShowFeatured 
+              ? remainingProducts.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    onAddToCart={onAddToCart}
+                    user={user}
+                  />
+                ))
+              : products.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    onAddToCart={onAddToCart}
+                    user={user}
+                  />
+                ))
+            }
           </motion.div>
         </>
       )}
@@ -1913,210 +1949,18 @@ export default function HomePage() {
         <ServicesSection />
 
         {/* Products Section */}
-       // Enhanced Products Section with Featured Carousel - COMPLETELY FIXED DUPLICATION
-const ProductsSection = React.memo(({
-  products,
-  allProducts,
-  searchQuery,
-  onSearchClear,
-  onRefresh,
-  isRefreshing,
-  onAddToCart,
-  debugInfo,
-  user
-}) => {
-  const [ref, inView] = useInView({
-    triggerOnce: true,
-    threshold: 0.1,
-  });
+        <ProductsSection
+          products={filteredProducts}
+          allProducts={products}
+          searchQuery={searchQuery}
+          onSearchClear={() => setSearchQuery("")}
+          onRefresh={refreshProducts}
+          isRefreshing={isRefreshing}
+          onAddToCart={addToCart}
+          debugInfo={debugInfo}
+          user={user}
+        />
 
-  const featuredProducts = products.slice(0, 8); // Show first 8 as featured
-  const remainingProducts = products.slice(8); // Products not in featured section
-
-  // Check if we should show featured section
-  const shouldShowFeatured = products.length > 8;
-
-  return (
-    <main id="products-section" className="container mx-auto px-3 sm:px-4 py-8 sm:py-12 lg:py-16">
-      <motion.div
-        ref={ref}
-        initial="initial"
-        animate={inView ? "animate" : "initial"}
-        variants={fadeInUp}
-        className="flex flex-col sm:flex-row justify-between items-center mb-6 sm:mb-8 gap-4"
-      >
-        <div className="flex items-center space-x-4">
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">Our Menu</h2>
-          {!user && (
-            <motion.span 
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              transition={{ delay: 0.3 }}
-              className="bg-orange-100 text-orange-600 px-3 py-1 rounded-full text-sm font-semibold"
-            >
-              Login to order
-            </motion.span>
-          )}
-        </div>
-        
-        <div className="flex items-center space-x-3">
-          <span className="text-sm text-gray-600 hidden sm:block">
-            {allProducts.length} products available
-          </span>
-        </div>
-      </motion.div>
-
-      {/* Featured Products Carousel - Only show when we have more than 8 products */}
-      {shouldShowFeatured && (
-        <motion.div
-          initial="initial"
-          animate={inView ? "animate" : "initial"}
-          variants={fadeInUp}
-          className="mb-12"
-        >
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xl sm:text-2xl font-bold text-gray-800">Featured Items</h3>
-            <motion.div
-              whileHover={{ scale: 1.05 }}
-              className="custom-swiper-buttons flex space-x-2"
-            >
-              <button className="swiper-button-prev-custom bg-orange-500 text-white p-2 rounded-lg">
-                ‹
-              </button>
-              <button className="swiper-button-next-custom bg-orange-500 text-white p-2 rounded-lg">
-                ›
-              </button>
-            </motion.div>
-          </div>
-
-          <Swiper
-            modules={[Navigation]}
-            navigation={{
-              nextEl: '.swiper-button-next-custom',
-              prevEl: '.swiper-button-prev-custom',
-            }}
-            breakpoints={{
-              320: { slidesPerView: 1, spaceBetween: 10 },
-              640: { slidesPerView: 2, spaceBetween: 20 },
-              768: { slidesPerView: 3, spaceBetween: 30 },
-              1024: { slidesPerView: 4, spaceBetween: 30 },
-            }}
-            className="pb-10"
-          >
-            {featuredProducts.map((product) => (
-              <SwiperSlide key={product.id}>
-                <ProductCard
-                  product={product}
-                  onAddToCart={onAddToCart}
-                  user={user}
-                />
-              </SwiperSlide>
-            ))}
-          </Swiper>
-        </motion.div>
-      )}
-
-      {/* All Products Grid */}
-      {products.length === 0 && allProducts.length === 0 ? (
-        <motion.div
-          initial="initial"
-          animate={inView ? "animate" : "initial"}
-          variants={fadeInUp}
-          className="text-center py-8 sm:py-12"
-        >
-          <div className="text-gray-400 text-4xl sm:text-6xl mb-4 sm:mb-6">🍕</div>
-          <p className="text-gray-500 text-lg sm:text-xl mb-4">Loading products...</p>
-          <p className="text-gray-400 text-sm">{debugInfo}</p>
-        </motion.div>
-      ) : products.length === 0 ? (
-        <motion.div
-          initial="initial"
-          animate={inView ? "animate" : "initial"}
-          variants={fadeInUp}
-          className="text-center py-8 sm:py-12"
-        >
-          <p className="text-gray-500 text-lg sm:text-xl">No products found. Try a different search term.</p>
-          {searchQuery && (
-            <motion.button 
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={onSearchClear}
-              className="mt-4 bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition text-sm sm:text-base"
-            >
-              Clear search
-            </motion.button>
-          )}
-        </motion.div>
-      ) : (
-        <>
-          {searchQuery && (
-            <motion.div
-              initial="initial"
-              animate={inView ? "animate" : "initial"}
-              variants={fadeInUp}
-              className="mb-6 sm:mb-8 text-center"
-            >
-              <p className="text-gray-600 text-base sm:text-lg">
-                Showing results for: <span className="font-semibold text-orange-600">"{searchQuery}"</span>
-                <motion.button 
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={onSearchClear}
-                  className="ml-3 sm:ml-4 bg-orange-500 text-white px-3 py-1 sm:px-4 sm:py-2 rounded-lg hover:bg-orange-600 transition text-sm sm:text-base"
-                >
-                  Clear search
-                </motion.button>
-              </p>
-            </motion.div>
-          )}
-
-          {/* Show "All Menu Items" heading only when we have featured section */}
-          {shouldShowFeatured && remainingProducts.length > 0 && (
-            <motion.h3
-              initial="initial"
-              animate={inView ? "animate" : "initial"}
-              variants={fadeInUp}
-              className="text-xl sm:text-2xl font-bold text-gray-800 mb-6"
-            >
-              All Menu Items
-            </motion.h3>
-          )}
-          
-          <motion.div
-            variants={staggerContainer}
-            initial="initial"
-            animate={inView ? "animate" : "initial"}
-            className="grid grid-cols-1 xs:grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6 lg:gap-8"
-          >
-            {/* 
-              NO DUPLICATION: 
-              - If featured section is shown: only show remaining products (products 9+)
-              - If no featured section: show all products
-            */}
-            {shouldShowFeatured 
-              ? remainingProducts.map((product) => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    onAddToCart={onAddToCart}
-                    user={user}
-                  />
-                ))
-              : products.map((product) => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    onAddToCart={onAddToCart}
-                    user={user}
-                  />
-                ))
-            }
-          </motion.div>
-        </>
-      )}
-    </main>
-  );
-});
         {/* Contact & Info Section */}
         <ContactSection />
 
