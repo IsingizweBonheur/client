@@ -81,6 +81,28 @@ export default function AdminPanel() {
   // Backend URL - make sure this matches your backend server
   const BACKEND_URL = API_URL;
 
+  // FIXED: Get proper authentication headers for backend
+  const getAuthHeaders = async () => {
+    try {
+      const { data } = await supabase.auth.getSession();
+      const user = data.session?.user;
+      
+      if (!user) {
+        console.error('No user session found');
+        return null;
+      }
+
+      return {
+        'user-id': user.id,
+        'user-email': user.email,
+        'Content-Type': 'application/json'
+      };
+    } catch (error) {
+      console.error('Error getting auth headers:', error);
+      return null;
+    }
+  };
+
   // Handle window resize
   useEffect(() => {
     const handleResize = () => {
@@ -128,12 +150,13 @@ export default function AdminPanel() {
     }
   };
 
-  // Upload image to backend server
+  // FIXED: Upload image to backend server
   const uploadImage = async (file) => {
     try {
       setUploading(true);
-      const token = await getToken();
-      if (!token) {
+      const authHeaders = await getAuthHeaders();
+      
+      if (!authHeaders) {
         toast.error("Authentication required");
         return null;
       }
@@ -143,7 +166,10 @@ export default function AdminPanel() {
 
       const response = await fetch(`${BACKEND_URL}/api/upload`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: {
+          'user-id': authHeaders['user-id'],
+          'user-email': authHeaders['user-email']
+        },
         body: formData
       });
 
@@ -221,26 +247,18 @@ export default function AdminPanel() {
     }
   };
 
-  // Get Supabase token for API calls
-  const getToken = async () => {
-    const { data } = await supabase.auth.getSession();
-    return data.session?.access_token;
-  };
-
-  // Fetch orders from backend
+  // FIXED: Fetch orders from backend
   const fetchOrders = async () => {
     try {
-      const token = await getToken();
-      if (!token) {
+      const authHeaders = await getAuthHeaders();
+      
+      if (!authHeaders) {
         toast.error("Authentication required");
         return;
       }
 
       const response = await fetch(`${BACKEND_URL}/api/orders`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: authHeaders
       });
 
       if (!response.ok) {
@@ -256,17 +274,18 @@ export default function AdminPanel() {
     }
   };
 
-  // Fetch dashboard stats
+  // FIXED: Fetch dashboard stats
   const fetchDashboardStats = async () => {
     try {
-      const token = await getToken();
-      if (!token) return;
+      const authHeaders = await getAuthHeaders();
+      
+      if (!authHeaders) {
+        console.error("Authentication required for dashboard stats");
+        return;
+      }
 
       const response = await fetch(`${BACKEND_URL}/api/dashboard/stats`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: authHeaders
       });
 
       if (!response.ok) {
@@ -298,20 +317,18 @@ export default function AdminPanel() {
     }
   };
 
-  // Fetch order items
+  // FIXED: Fetch order items
   const fetchOrderItems = async (orderId) => {
     try {
-      const token = await getToken();
-      if (!token) {
+      const authHeaders = await getAuthHeaders();
+      
+      if (!authHeaders) {
         toast.error("Authentication required");
         return;
       }
 
       const response = await fetch(`${BACKEND_URL}/api/orders/${orderId}/items`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: authHeaders
       });
 
       if (!response.ok) {
@@ -328,16 +345,19 @@ export default function AdminPanel() {
     }
   };
 
-  // Update order status
+  // FIXED: Update order status
   const updateOrderStatus = async (orderId, newStatus) => {
     try {
-      const token = await getToken();
+      const authHeaders = await getAuthHeaders();
+      
+      if (!authHeaders) {
+        toast.error("Authentication required");
+        return;
+      }
+
       const response = await fetch(`${BACKEND_URL}/api/orders/${orderId}`, {
         method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
+        headers: authHeaders,
         body: JSON.stringify({ status: newStatus })
       });
 
@@ -355,7 +375,7 @@ export default function AdminPanel() {
     }
   };
 
-  // Save product (both add and update)
+  // FIXED: Save product (both add and update)
   const saveProduct = async (e) => {
     e.preventDefault();
     
@@ -365,8 +385,9 @@ export default function AdminPanel() {
     }
 
     try {
-      const token = await getToken();
-      if (!token) {
+      const authHeaders = await getAuthHeaders();
+      
+      if (!authHeaders) {
         toast.error("Authentication required");
         return;
       }
@@ -394,19 +415,13 @@ export default function AdminPanel() {
       if (editingProduct) {
         response = await fetch(`${BACKEND_URL}/api/products/${editingProduct}`, {
           method: 'PUT',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
+          headers: authHeaders,
           body: JSON.stringify(productData)
         });
       } else {
         response = await fetch(`${BACKEND_URL}/api/products`, {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
+          headers: authHeaders,
           body: JSON.stringify(productData)
         });
       }
@@ -427,23 +442,21 @@ export default function AdminPanel() {
     }
   };
 
-  // Delete product
+  // FIXED: Delete product
   const deleteProduct = async (productId) => {
     if (!window.confirm("Are you sure you want to delete this product? This action cannot be undone.")) return;
     
     try {
-      const token = await getToken();
-      if (!token) {
+      const authHeaders = await getAuthHeaders();
+      
+      if (!authHeaders) {
         toast.error("Authentication required");
         return;
       }
 
       const response = await fetch(`${BACKEND_URL}/api/products/${productId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: authHeaders
       });
 
       if (!response.ok) {
