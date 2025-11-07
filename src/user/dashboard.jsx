@@ -247,7 +247,7 @@ const CartItem = React.memo(({ item, onUpdateQuantity, onRemove }) => {
   );
 });
 
-// Enhanced Order Tracking Component with better mobile layout
+// Enhanced Order Tracking Component with Call Restaurant button
 const OrderTracking = React.memo(({ order, onClose }) => {
   const getStatusSteps = (status) => {
     const steps = [
@@ -260,6 +260,14 @@ const OrderTracking = React.memo(({ order, onClose }) => {
   };
 
   const steps = getStatusSteps(order.status);
+  
+  const RESTAURANT_PHONE = "0788295765";
+
+  const handleCallRestaurant = useCallback(() => {
+    if (window.confirm(`Call restaurant at ${RESTAURANT_PHONE}?`)) {
+      window.open(`tel:${RESTAURANT_PHONE}`, '_self');
+    }
+  }, []);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 xs:p-4 bg-black/50 animate-fade-in">
@@ -351,13 +359,54 @@ const OrderTracking = React.memo(({ order, onClose }) => {
               </div>
             </div>
           </div>
+
+          {/* Call Restaurant Section - Only show for completed orders */}
+          {order.status === 'completed' && (
+            <div className="mt-4 xs:mt-6 bg-green-50 rounded-xl p-3 xs:p-4 sm:p-6 border border-green-200">
+              <h3 className="font-semibold text-gray-800 mb-3 xs:mb-4 flex items-center text-base xs:text-lg">
+                <FontAwesomeIcon icon={faPhone} className="text-green-500 mr-2 xs:mr-3 text-base xs:text-lg" />
+                Need Help With Your Order?
+              </h3>
+              <div className="space-y-3 xs:space-y-4">
+                <p className="text-gray-700 text-sm xs:text-base">
+                  If you have any questions about your completed order or want to provide feedback, feel free to call our restaurant.
+                </p>
+                <button 
+                  onClick={handleCallRestaurant}
+                  className="w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white py-3 xs:py-4 px-4 xs:px-6 rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 xs:space-x-3 font-semibold text-sm xs:text-base shadow-lg hover:shadow-xl transform hover:scale-105 min-h-[44px]"
+                >
+                  <FontAwesomeIcon icon={faPhone} className="text-base xs:text-lg" />
+                  <span>Call Restaurant: {RESTAURANT_PHONE}</span>
+                </button>
+                <p className="text-gray-600 text-xs xs:text-sm text-center">
+                  Our team is happy to assist you with any inquiries
+                </p>
+              </div>
+            </div>
+          )}
         </div>
         
         <div className="border-t border-gray-200 p-3 xs:p-4 sm:p-6 bg-gray-50 flex-shrink-0">
-          <div className="flex justify-center">
+          <div className={`flex flex-col ${order.status === 'completed' ? 'sm:flex-row' : ''} gap-3 xs:gap-4`}>
+            {/* Call Restaurant Button for completed orders - shown alongside Close button on larger screens */}
+            {order.status === 'completed' && (
+              <button 
+                onClick={handleCallRestaurant}
+                className="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white py-2.5 xs:py-3 px-4 xs:px-6 rounded-xl transition-all duration-300 flex items-center justify-center space-x-2 xs:space-x-3 font-semibold text-sm xs:text-base shadow-lg hover:shadow-xl transform hover:scale-105 min-h-[44px] order-2 sm:order-1"
+              >
+                <FontAwesomeIcon icon={faPhone} className="text-sm xs:text-base" />
+                <span>Call Restaurant</span>
+              </button>
+            )}
+            
+            {/* Close Tracking Button */}
             <button 
               onClick={onClose}
-              className="bg-gray-500 hover:bg-gray-600 text-white py-2.5 xs:py-3 px-6 xs:px-8 rounded-xl transition-colors duration-200 font-semibold text-sm xs:text-base w-full xs:w-auto min-h-[44px]"
+              className={`bg-gray-500 hover:bg-gray-600 text-white py-2.5 xs:py-3 px-4 xs:px-6 rounded-xl transition-colors duration-200 font-semibold text-sm xs:text-base shadow-lg hover:shadow-xl transform hover:scale-105 min-h-[44px] ${
+                order.status === 'completed' 
+                  ? 'w-full sm:w-auto order-1 sm:order-2' 
+                  : 'w-full'
+              }`}
             >
               Close Tracking
             </button>
