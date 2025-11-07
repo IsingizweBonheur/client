@@ -151,7 +151,7 @@ const UserLogin = () => {
   };
 
   // API request handler with timeout
-  const makeApiRequest = async (url, options, timeout = 10000) => {
+  const makeApiRequest = async (url, options, timeout = 1000) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     
