@@ -9,7 +9,7 @@ import {
 // API configuration
 const API_URL = "https://backend-wgm2.onrender.com/api";
 
-// Improved User context with headers management
+// User context simulation
 const useUser = () => {
   const [user, setUser] = useState(() => {
     try {
@@ -25,11 +25,6 @@ const useUser = () => {
     try {
       setUser(userData);
       localStorage.setItem('user', JSON.stringify(userData));
-      // Also store headers for API requests
-      localStorage.setItem('user-headers', JSON.stringify({
-        'user-id': userData.id,
-        'user-email': userData.email
-      }));
     } catch (error) {
       console.error('Error saving user data to localStorage:', error);
     }
@@ -39,23 +34,12 @@ const useUser = () => {
     setUser(null);
     try {
       localStorage.removeItem('user');
-      localStorage.removeItem('user-headers');
     } catch (error) {
       console.error('Error removing user data from localStorage:', error);
     }
   };
 
-  const getHeaders = () => {
-    try {
-      const headers = localStorage.getItem('user-headers');
-      return headers ? JSON.parse(headers) : null;
-    } catch (error) {
-      console.error('Error getting user headers:', error);
-      return null;
-    }
-  };
-
-  return { user, login, logout, getHeaders };
+  return { user, login, logout };
 };
 
 // Validation functions
@@ -88,7 +72,7 @@ const UserLogin = () => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState('');
-  const { login, getHeaders } = useUser();
+  const { login } = useUser();
 
   // Use API_URL directly
   const API_BASE_URL = API_URL;
@@ -166,94 +150,37 @@ const UserLogin = () => {
     return Object.keys(errors).length === 0;
   };
 
-  // IMPROVED: API request handler with proper headers
-  const makeApiRequest = async (url, options = {}, timeout = 30000) => {
+  // API request handler with timeout
+  const makeApiRequest = async (url, options, timeout = 10000) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     
     try {
-      console.log(`Making API request to: ${url}`);
-      
-      // Add user headers for protected routes if available
-      const userHeaders = getHeaders();
-      const headers = {
-        'Content-Type': 'application/json',
-        ...(userHeaders && {
-          'user-id': userHeaders['user-id'],
-          'user-email': userHeaders['user-email']
-        }),
-        ...options.headers
-      };
-
       const response = await fetch(url, {
         ...options,
-        headers,
         signal: controller.signal
       });
       clearTimeout(timeoutId);
 
-      // Handle response
+      // Check if response is JSON
       const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('Server returned non-JSON response');
+      }
+
+      const data = await response.json();
       
       if (!response.ok) {
-        // Handle server errors
-        if (response.status >= 500) {
-          const text = await response.text();
-          throw new Error(`Server error (${response.status}): ${text || 'Please try again later'}`);
-        }
-        
-        // Handle client errors with JSON
-        if (contentType && contentType.includes('application/json')) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || `Request failed with status ${response.status}`);
-        } else {
-          const text = await response.text();
-          throw new Error(text || `Request failed with status ${response.status}`);
-        }
+        throw new Error(data.message || `Request failed with status ${response.status}`);
       }
 
-      // Parse successful response
-      if (contentType && contentType.includes('application/json')) {
-        return await response.json();
-      } else {
-        const text = await response.text();
-        return { message: text, success: true };
-      }
-
+      return data;
     } catch (error) {
       clearTimeout(timeoutId);
-      console.error('API Request Error:', error);
-      
       if (error.name === 'AbortError') {
-        throw new Error('Request timeout - the server is taking too long to respond. Please try again.');
-      } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        throw new Error('Network error - please check your internet connection and try again.');
-      } else {
-        throw new Error(error.message || 'An unexpected error occurred. Please try again.');
+        throw new Error('Request timeout - please try again');
       }
-    }
-  };
-
-  // Handle server cold starts with retry
-  const makeApiRequestWithRetry = async (url, options = {}, retries = 1, timeout = 25000) => {
-    for (let attempt = 1; attempt <= retries + 1; attempt++) {
-      try {
-        return await makeApiRequest(url, options, timeout);
-      } catch (error) {
-        console.log(`Attempt ${attempt} failed:`, error.message);
-        
-        // If it's the last attempt or not a timeout/network error, throw
-        if (attempt > retries || 
-            (!error.message.includes('timeout') && 
-             !error.message.includes('Network error'))) {
-          throw error;
-        }
-        
-        // Wait before retrying
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-        console.log(`Retrying in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
+      throw error;
     }
   };
 
@@ -291,17 +218,13 @@ const UserLogin = () => {
             password: formData.password 
           };
 
-      console.log('Sending request to:', `${API_BASE_URL}${endpoint}`);
-
-      const data = await makeApiRequestWithRetry(`${API_BASE_URL}${endpoint}`, {
+      const data = await makeApiRequest(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify(payload),
       });
-
-      // FIX: Check if user data exists in response
-      if (!data.user) {
-        throw new Error('Invalid response from server: missing user data');
-      }
 
       showMessage(data.message, 'success');
 
@@ -320,18 +243,8 @@ const UserLogin = () => {
 
     } catch (error) {
       console.error('Authentication error:', error);
-      
-      // More specific error messages
-      if (error.message.includes('timeout')) {
-        showMessage('The server is taking too long to respond. This might be due to server cold start. Please try again in a moment.', 'error');
-      } else if (error.message.includes('Network error')) {
-        showMessage('Unable to connect to the server. Please check your internet connection and try again.', 'error');
-      } else if (error.message.includes('Server error')) {
-        showMessage('Server is currently experiencing issues. Please try again in a few moments.', 'error');
-      } else if (error.message.includes('Invalid credentials')) {
-        showMessage('Invalid email or password. Please check your credentials and try again.', 'error');
-      } else if (error.message.includes('User already exists')) {
-        showMessage('An account with this email or username already exists. Please try logging in instead.', 'error');
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        showMessage('Network error: Please check your internet connection and try again', 'error');
       } else {
         showMessage(error.message || 'An unexpected error occurred. Please try again.', 'error');
       }
@@ -362,8 +275,11 @@ const UserLogin = () => {
     showMessage('Sending password reset link...', 'info');
 
     try {
-      const data = await makeApiRequestWithRetry(`${API_BASE_URL}/auth/forgot-password`, {
+      const data = await makeApiRequest(`${API_BASE_URL}/auth/forgot-password`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({ email: formData.email.trim().toLowerCase() }),
       });
 
@@ -389,11 +305,8 @@ const UserLogin = () => {
 
     } catch (error) {
       console.error('Forgot password error:', error);
-      
-      if (error.message.includes('timeout')) {
-        showMessage('The server is taking too long to respond. Please try again in a moment.', 'error');
-      } else if (error.message.includes('Network error')) {
-        showMessage('Unable to connect to the server. Please check your internet connection.', 'error');
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        showMessage('Network error: Please check your internet connection', 'error');
       } else {
         showMessage(error.message || 'Failed to send reset email. Please try again.', 'error');
       }
@@ -424,8 +337,11 @@ const UserLogin = () => {
     showMessage('Resetting your password...', 'info');
 
     try {
-      const data = await makeApiRequestWithRetry(`${API_BASE_URL}/auth/reset-password`, {
+      const data = await makeApiRequest(`${API_BASE_URL}/auth/reset-password`, {
         method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           token: resetToken,
           newPassword: formData.newPassword
@@ -445,13 +361,8 @@ const UserLogin = () => {
 
     } catch (error) {
       console.error('Reset password error:', error);
-      
-      if (error.message.includes('timeout')) {
-        showMessage('The server is taking too long to respond. Please try again in a moment.', 'error');
-      } else if (error.message.includes('Network error')) {
-        showMessage('Unable to connect to the server. Please check your internet connection.', 'error');
-      } else if (error.message.includes('Invalid or expired reset token')) {
-        showMessage('The reset link has expired or is invalid. Please request a new password reset.', 'error');
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        showMessage('Network error: Please check your internet connection', 'error');
       } else {
         showMessage(error.message || 'Failed to reset password. Please try again.', 'error');
       }
@@ -900,14 +811,6 @@ const UserLogin = () => {
             />
             {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
           </button>
-        </div>
-
-        {/* Server Status Info */}
-        <div className="mt-6 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="flex items-center text-sm text-blue-800">
-            <FontAwesomeIcon icon={faExclamationTriangle} className="mr-2 text-blue-500" />
-            <span>First request may take longer due to server startup</span>
-          </div>
         </div>
       </div>
     </div>
