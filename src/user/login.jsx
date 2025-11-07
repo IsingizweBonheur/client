@@ -150,38 +150,78 @@ const UserLogin = () => {
     return Object.keys(errors).length === 0;
   };
 
-  // API request handler with timeout
-  const makeApiRequest = async (url, options, timeout = 1000) => {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
+  // Improved API request handler with better timeout and retry logic
+  const makeApiRequest = async (url, options, timeout = 15000, maxRetries = 2) => {
+    let lastError;
     
-    try {
-      const response = await fetch(url, {
-        ...options,
-        signal: controller.signal
-      });
-      clearTimeout(timeoutId);
-
-      // Check if response is JSON
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        throw new Error('Server returned non-JSON response');
-      }
-
-      const data = await response.json();
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
       
-      if (!response.ok) {
-        throw new Error(data.message || `Request failed with status ${response.status}`);
-      }
+      try {
+        console.log(`API Request Attempt ${attempt}:`, url);
+        
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+          headers: {
+            'Content-Type': 'application/json',
+            ...options.headers,
+          },
+        });
+        
+        clearTimeout(timeoutId);
 
-      return data;
-    } catch (error) {
-      clearTimeout(timeoutId);
-      if (error.name === 'AbortError') {
-        throw new Error('Request timeout - please try again');
+        // Handle non-JSON responses gracefully
+        const contentType = response.headers.get('content-type');
+        if (!response.ok) {
+          // If it's a server error, try to parse error message
+          let errorMessage = `Request failed with status ${response.status}`;
+          
+          if (contentType && contentType.includes('application/json')) {
+            const errorData = await response.json();
+            errorMessage = errorData.message || errorMessage;
+          } else {
+            const textResponse = await response.text();
+            if (textResponse) {
+              errorMessage = textResponse;
+            }
+          }
+          
+          throw new Error(errorMessage);
+        }
+
+        // Parse successful response
+        if (contentType && contentType.includes('application/json')) {
+          const data = await response.json();
+          return data;
+        } else {
+          // Handle non-JSON successful responses
+          const textResponse = await response.text();
+          return { message: textResponse || 'Request completed successfully' };
+        }
+
+      } catch (error) {
+        clearTimeout(timeoutId);
+        lastError = error;
+        
+        if (error.name === 'AbortError') {
+          console.log(`Attempt ${attempt}: Request timeout`);
+          if (attempt < maxRetries) {
+            // Wait for a short time before retrying (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+            continue;
+          } else {
+            throw new Error('Request timeout - server is taking too long to respond. Please try again.');
+          }
+        }
+        
+        // For other errors, throw immediately
+        throw error;
       }
-      throw error;
     }
+    
+    throw lastError;
   };
 
   const handleSubmit = async (e) => {
@@ -218,22 +258,25 @@ const UserLogin = () => {
             password: formData.password 
           };
 
+      console.log('Sending request to:', `${API_BASE_URL}${endpoint}`);
+      
       const data = await makeApiRequest(`${API_BASE_URL}${endpoint}`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify(payload),
-      });
+      }, 15000, 2); // 15 second timeout, 2 retries
 
       showMessage(data.message, 'success');
 
       if (isLogin) {
         // Store user data and redirect
-        login(data.user);
-        setTimeout(() => {
-          window.location.replace('/userdashboard');
-        }, 1500);
+        if (data.user) {
+          login(data.user);
+          setTimeout(() => {
+            window.location.replace('/userdashboard');
+          }, 1500);
+        } else {
+          throw new Error('No user data received from server');
+        }
       } else {
         // Switch to login after successful registration
         setIsLogin(true);
@@ -243,8 +286,14 @@ const UserLogin = () => {
 
     } catch (error) {
       console.error('Authentication error:', error);
+      
+      // Handle specific error types
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
         showMessage('Network error: Please check your internet connection and try again', 'error');
+      } else if (error.message.includes('timeout')) {
+        showMessage('Server is taking too long to respond. Please try again in a moment.', 'error');
+      } else if (error.message.includes('Failed to fetch')) {
+        showMessage('Cannot connect to the server. Please check your internet connection.', 'error');
       } else {
         showMessage(error.message || 'An unexpected error occurred. Please try again.', 'error');
       }
@@ -277,11 +326,8 @@ const UserLogin = () => {
     try {
       const data = await makeApiRequest(`${API_BASE_URL}/auth/forgot-password`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({ email: formData.email.trim().toLowerCase() }),
-      });
+      }, 15000, 2);
 
       showMessage('✅ If an account with that email exists, a password reset link has been sent! Check your inbox and spam folder.', 'success');
       
@@ -305,7 +351,10 @@ const UserLogin = () => {
 
     } catch (error) {
       console.error('Forgot password error:', error);
-      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      
+      if (error.message.includes('timeout')) {
+        showMessage('Server timeout. Please try again.', 'error');
+      } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
         showMessage('Network error: Please check your internet connection', 'error');
       } else {
         showMessage(error.message || 'Failed to send reset email. Please try again.', 'error');
@@ -339,14 +388,11 @@ const UserLogin = () => {
     try {
       const data = await makeApiRequest(`${API_BASE_URL}/auth/reset-password`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
         body: JSON.stringify({
           token: resetToken,
           newPassword: formData.newPassword
         }),
-      });
+      }, 15000, 2);
 
       showMessage('✅ Password reset successfully! You can now login with your new password.', 'success');
       
@@ -361,7 +407,10 @@ const UserLogin = () => {
 
     } catch (error) {
       console.error('Reset password error:', error);
-      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+      
+      if (error.message.includes('timeout')) {
+        showMessage('Server timeout. Please try again.', 'error');
+      } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
         showMessage('Network error: Please check your internet connection', 'error');
       } else {
         showMessage(error.message || 'Failed to reset password. Please try again.', 'error');
@@ -487,9 +536,9 @@ const UserLogin = () => {
             <div className="flex items-start">
               <FontAwesomeIcon icon={faExclamationTriangle} className="text-orange-500 mt-1 mr-3 flex-shrink-0" />
               <div>
-                <p className="text-sm text-orange-800 font-medium">Check your email</p>
+                <p className="text-sm text-orange-800 font-medium">Server Notice</p>
                 <p className="text-xs text-orange-700 mt-1">
-                  The password reset link will be sent to your email inbox. Don't forget to check your spam folder if you don't see it.
+                  The server may take a moment to respond as it wakes up. Please be patient.
                 </p>
               </div>
             </div>
@@ -798,6 +847,16 @@ const UserLogin = () => {
             )}
           </button>
         </form>
+
+        {/* Server Notice */}
+        <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-start">
+            <FontAwesomeIcon icon={faExclamationTriangle} className="text-blue-500 mt-0.5 mr-2 flex-shrink-0" />
+            <p className="text-xs text-blue-700">
+              <strong>Note:</strong> The server may take 30-60 seconds to wake up on first request. Please be patient.
+            </p>
+          </div>
+        </div>
 
         {/* Toggle between Login/Signup */}
         <div className="text-center mt-6">
