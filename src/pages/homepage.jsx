@@ -1121,19 +1121,12 @@ const Footer = React.memo(() => {
           className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-orange-400"
         >
           <div className="text-center text-orange-200 text-sm sm:text-base">
-            <p className="mb-2">
-            </p>
-            <p className="mb-3">
-              Want a website like this? Visit my portfolio:
-            </p>
             <motion.a 
               whileHover={{ scale: 1.05 }}
-              {/* href="https://ibonheurportifolio.netlify.app/"  */}
               target="_blank" 
               rel="noopener noreferrer"
               className="inline-block bg-white/20 hover:bg-white/30 text-orange-100 hover:text-white px-4 py-2 rounded-lg transition-all duration-300 font-medium text-xs sm:text-sm backdrop-blur-sm"
             >
-              🌐 ibonheurportifolio.netlify.app
             </motion.a>
           </div>
         </motion.div>
