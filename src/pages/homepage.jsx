@@ -837,11 +837,11 @@ const ProductsSection = React.memo(({
     threshold: 0.1,
   });
 
-  const featuredProducts = products.slice(0, 8); // Show first 8 as featured
-  const remainingProducts = products.slice(8); // Products not in featured section
+  const featuredProducts = products.slice(0, 5000); // Show first 8 as featured
+  const remainingProducts = products.slice(5000); // Products not in featured section
 
   // Check if we should show featured section
-  const shouldShowFeatured = products.length > 8;
+  const shouldShowFeatured = products.length > 5000;
 
   return (
     <main id="products-section" className="container mx-auto px-3 sm:px-4 py-8 sm:py-12 lg:py-16">
