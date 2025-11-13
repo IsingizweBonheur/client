@@ -300,6 +300,12 @@ export default function AdminPanel() {
     }
   };
 
+  // Calculate total revenue from completed orders only
+  const calculateCompletedRevenue = () => {
+    const completedOrders = orders.filter(order => order.status === 'completed');
+    return completedOrders.reduce((total, order) => total + (order.total_amount || 0), 0);
+  };
+
   // Fetch products from backend
   const fetchProducts = async () => {
     try {
@@ -874,11 +880,11 @@ export default function AdminPanel() {
                   },
                   {
                     title: "Total Revenue",
-                    value: dashboardStats.totalRevenue,
+                    value: calculateCompletedRevenue(), // Use the new function here
                     icon: faMoneyBillWave,
                     color: "bg-indigo-500",
                     isCurrency: true,
-                    description: "All time revenue"
+                    description: "Revenue from completed orders"
                   },
                   {
                     title: "Cancelled Orders",
@@ -1320,7 +1326,7 @@ export default function AdminPanel() {
                     <div className="text-center p-4">
                       <FontAwesomeIcon icon={faChartBar} className="text-3xl sm:text-4xl text-gray-300 mb-2 sm:mb-3" />
                       <p className="text-gray-500 text-sm sm:text-base">Revenue chart in {currency} will be displayed here</p>
-                      <p className="text-xs sm:text-sm text-gray-400 mt-1 sm:mt-2">Total: {formatCurrency(dashboardStats.totalRevenue)}</p>
+                      <p className="text-xs sm:text-sm text-gray-400 mt-1 sm:mt-2">Total: {formatCurrency(calculateCompletedRevenue())}</p>
                     </div>
                   </div>
                 </div>
@@ -1334,7 +1340,7 @@ export default function AdminPanel() {
                       { label: "Pending Orders", value: dashboardStats.pendingOrders, isCurrency: false, color: "bg-yellow-500" },
                       { label: "Completed Orders", value: dashboardStats.completedOrders, isCurrency: false, color: "bg-green-500" },
                       { label: "Cancelled Orders", value: dashboardStats.totalOrders - dashboardStats.pendingOrders - dashboardStats.completedOrders, isCurrency: false, color: "bg-red-500" },
-                      { label: "Total Revenue", value: dashboardStats.totalRevenue, isCurrency: true, color: "bg-indigo-500" },
+                      { label: "Total Revenue", value: calculateCompletedRevenue(), isCurrency: true, color: "bg-indigo-500" },
                     ].map((stat, index) => (
                       <div key={index} className="flex items-center justify-between p-2 sm:p-3 bg-gray-50 rounded-lg">
                         <div className="flex items-center gap-2 sm:gap-3">
