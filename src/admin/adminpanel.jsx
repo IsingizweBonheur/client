@@ -18,6 +18,7 @@ import {
   faEllipsisV, faEllipsisH
 } from "@fortawesome/free-solid-svg-icons";
 import { toast } from "react-toastify";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 export default function AdminPanel() {
   const navigate = useNavigate();
@@ -71,6 +72,10 @@ export default function AdminPanel() {
     totalProducts: 0
   });
 
+  // Revenue chart data state
+  const [revenueData, setRevenueData] = useState([]);
+  const [timeRange, setTimeRange] = useState('monthly'); // 'daily', 'weekly', 'monthly'
+
   // Currency conversion rates
   const exchangeRates = {
     FRW: 1,
@@ -81,7 +86,193 @@ export default function AdminPanel() {
   // Backend URL
   const BACKEND_URL = API_URL;
 
-  // FIXED: Get proper authentication headers from YOUR users table
+  // RevenueChart Component
+  const RevenueChart = ({ data, currency = 'FRW' }) => {
+    // Custom tooltip component
+    const CustomTooltip = ({ active, payload, label }) => {
+      if (active && payload && payload.length) {
+        return (
+          <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
+            <p className="font-semibold text-gray-800">{label}</p>
+            <p className="text-blue-600">
+              {currency} {payload[0].value.toLocaleString()}
+            </p>
+          </div>
+        );
+      }
+      return null;
+    };
+
+    // Calculate total revenue
+    const totalRevenue = data.reduce((sum, item) => sum + item.revenue, 0);
+
+    // Colors for bars
+    const colors = ['#3B82F6', '#60A5FA', '#93C5FD', '#BFDBFE', '#DBEAFE', '#EFF6FF'];
+
+    return (
+      <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-lg font-semibold text-gray-800">Revenue Overview</h3>
+            <span className="text-sm text-gray-600">Currency: {currency}</span>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-green-600">
+              {currency} {totalRevenue.toLocaleString()}
+            </p>
+            <p className="text-sm text-gray-600">Total Revenue</p>
+          </div>
+        </div>
+
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={data}
+              margin={{
+                top: 20,
+                right: 30,
+                left: 20,
+                bottom: 60,
+              }}
+            >
+              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+              <XAxis 
+                dataKey="name" 
+                angle={-45}
+                textAnchor="end"
+                height={80}
+                tick={{ fontSize: 12 }}
+              />
+              <YAxis 
+                tickFormatter={(value) => `${currency} ${(value / 1000).toFixed(0)}K`}
+                tick={{ fontSize: 12 }}
+              />
+              <Tooltip content={<CustomTooltip />} />
+              <Bar 
+                dataKey="revenue" 
+                radius={[4, 4, 0, 0]}
+              >
+                {data.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Legend */}
+        <div className="mt-4 flex flex-wrap gap-3 justify-center">
+          {data.map((item, index) => (
+            <div key={item.name} className="flex items-center">
+              <div 
+                className="w-3 h-3 rounded-full mr-2"
+                style={{ backgroundColor: colors[index % colors.length] }}
+              ></div>
+              <span className="text-sm text-gray-600">{item.name}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  // Generate actual revenue data based on completed orders
+  const generateRevenueData = () => {
+    const completedOrders = orders.filter(order => order.status === 'completed');
+    
+    if (completedOrders.length === 0) {
+      // Return empty data structure if no completed orders
+      if (timeRange === 'daily') {
+        return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => ({
+          name: day,
+          revenue: 0
+        }));
+      } else if (timeRange === 'weekly') {
+        return ['Week 1', 'Week 2', 'Week 3', 'Week 4'].map(week => ({
+          name: week,
+          revenue: 0
+        }));
+      } else {
+        return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'].map(month => ({
+          name: month,
+          revenue: 0
+        }));
+      }
+    }
+
+    if (timeRange === 'daily') {
+      // Group by day of the week based on order creation date
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const dayRevenue = days.map(day => ({ name: day, revenue: 0 }));
+      
+      completedOrders.forEach(order => {
+        if (order.created_at) {
+          const orderDate = new Date(order.created_at);
+          const dayIndex = orderDate.getDay(); // 0 = Sunday, 1 = Monday, etc.
+          dayRevenue[dayIndex].revenue += order.total_amount || 0;
+        }
+      });
+      
+      return dayRevenue;
+      
+    } else if (timeRange === 'weekly') {
+      // Group by week of the month
+      const weeklyRevenue = [
+        { name: 'Week 1', revenue: 0 },
+        { name: 'Week 2', revenue: 0 },
+        { name: 'Week 3', revenue: 0 },
+        { name: 'Week 4', revenue: 0 }
+      ];
+      
+      completedOrders.forEach(order => {
+        if (order.created_at) {
+          const orderDate = new Date(order.created_at);
+          const weekOfMonth = Math.floor((orderDate.getDate() - 1) / 7);
+          const weekIndex = Math.min(weekOfMonth, 3); // Ensure index is 0-3
+          weeklyRevenue[weekIndex].revenue += order.total_amount || 0;
+        }
+      });
+      
+      return weeklyRevenue;
+      
+    } else {
+      // Monthly data - group by month
+      const monthlyRevenue = [
+        { name: 'Jan', revenue: 0 },
+        { name: 'Feb', revenue: 0 },
+        { name: 'Mar', revenue: 0 },
+        { name: 'Apr', revenue: 0 },
+        { name: 'May', revenue: 0 },
+        { name: 'Jun', revenue: 0 },
+        { name: 'Jul', revenue: 0 },
+        { name: 'Aug', revenue: 0 },
+        { name: 'Sep', revenue: 0 },
+        { name: 'Oct', revenue: 0 },
+        { name: 'Nov', revenue: 0 },
+        { name: 'Dec', revenue: 0 }
+      ];
+      
+      completedOrders.forEach(order => {
+        if (order.created_at) {
+          const orderDate = new Date(order.created_at);
+          const monthIndex = orderDate.getMonth(); // 0 = January, 11 = December
+          monthlyRevenue[monthIndex].revenue += order.total_amount || 0;
+        }
+      });
+      
+      // Only return months with data or last 6 months
+      const monthsWithData = monthlyRevenue.filter(month => month.revenue > 0);
+      if (monthsWithData.length > 0) {
+        return monthsWithData.slice(-6); // Last 6 months with data
+      }
+      
+      // If no data, return last 6 months with zero revenue
+      const currentMonth = new Date().getMonth();
+      return monthlyRevenue.slice(Math.max(0, currentMonth - 5), currentMonth + 1);
+    }
+  };
+
+  // FIXED: Enhanced authentication headers with auto-user creation
   const getAuthHeaders = async () => {
     try {
       const { data: authData } = await supabase.auth.getSession();
@@ -89,10 +280,22 @@ export default function AdminPanel() {
       
       if (!authUser) {
         console.error('No user session found');
+        toast.error("Please log in again");
         return null;
       }
 
-      // Get user from YOUR users table that matches the Supabase Auth email
+      // Get the auth token for Bearer token authentication
+      const token = authData.session?.access_token;
+      
+      if (token) {
+        // Use Bearer token authentication (recommended)
+        return {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        };
+      }
+
+      // Fallback: Try to find user in your custom users table
       const { data: user, error } = await supabase
         .from("users")
         .select("id, email, username")
@@ -101,12 +304,39 @@ export default function AdminPanel() {
 
       if (error || !user) {
         console.error('User not found in users table:', error);
-        toast.error("User account not found. Please contact administrator.");
-        return null;
+        
+        // Try to auto-create the user in your custom table
+        try {
+          const { data: newUser, error: createError } = await supabase
+            .from("users")
+            .insert([{
+              email: authUser.email,
+              username: authUser.email.split('@')[0],
+              password: 'auto-created-from-auth' // placeholder
+            }])
+            .select()
+            .single();
+
+          if (createError || !newUser) {
+            console.error('Failed to auto-create user:', createError);
+            toast.error("User account not found. Please contact administrator.");
+            return null;
+          }
+
+          console.log('Auto-created user in users table:', newUser);
+          return {
+            'user-id': newUser.id,
+            'user-email': newUser.email,
+            'Content-Type': 'application/json'
+          };
+        } catch (createError) {
+          console.error('Error auto-creating user:', createError);
+          toast.error("Failed to create user account automatically");
+          return null;
+        }
       }
 
       console.log('Found user in users table:', user);
-
       return {
         'user-id': user.id,
         'user-email': user.email,
@@ -136,6 +366,11 @@ export default function AdminPanel() {
 
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+  // Generate revenue data when orders or time range changes
+  useEffect(() => {
+    setRevenueData(generateRevenueData());
+  }, [orders, timeRange]);
 
   // Fixed image URL handling
   const getImageUrl = (url) => {
@@ -182,10 +417,7 @@ export default function AdminPanel() {
 
       const response = await fetch(`${BACKEND_URL}/api/upload`, {
         method: 'POST',
-        headers: {
-          'user-id': authHeaders['user-id'],
-          'user-email': authHeaders['user-email']
-        },
+        headers: authHeaders, // Use the headers directly (they now include Authorization if available)
         body: formData
       });
 
@@ -869,9 +1101,6 @@ export default function AdminPanel() {
                 {activeTab === "products" && "Product Management"}
                 {activeTab === "reports" && "Sales Reports"}
               </h1>
-              <p className="text-gray-600 text-sm sm:text-base truncate">
-                Welcome back, <span className="font-semibold text-orange-600">{user?.email}</span>
-              </p>
             </div>
             <div className="flex flex-col xs:flex-row gap-2 sm:gap-3 w-full lg:w-auto">
               <select
@@ -1214,7 +1443,7 @@ export default function AdminPanel() {
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 order-1 xl:order-2">
                   <div className="p-3 sm:p-4 lg:p-6 border-b border-gray-200">
                     <h2 className="font-semibold text-gray-800 text-sm sm:text-base">
-                      Order Details {selectedOrder && `(#${selectedOrder})`}
+                      Order Details
                     </h2>
                   </div>
                   <div className="p-3 sm:p-4 lg:p-6">
@@ -1259,7 +1488,7 @@ export default function AdminPanel() {
                                   {item.description || 'No description'}
                                 </p>
                                 <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                                  Quantity: {item.quantity} × {formatCurrency(item.unit_price || item.price)}
+                                  Quantity: {item.quantity}
                                 </p>
                                 <p className="text-orange-600 font-bold mt-1 text-sm sm:text-base">
                                   {formatCurrency(item.total_amount || (item.quantity * (item.unit_price || item.price)))}
@@ -1388,26 +1617,40 @@ export default function AdminPanel() {
           {/* Reports Tab */}
           {activeTab === "reports" && (
             <div className="space-y-4 sm:space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-                {/* Revenue Overview */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 sm:p-4 lg:p-6">
-                  <div className="flex justify-between items-center mb-3 sm:mb-4">
-                    <h2 className="text-base sm:text-lg font-semibold text-gray-800">Revenue Overview</h2>
-                    <div className="text-xs sm:text-sm text-gray-500">
-                      Currency: <span className="font-bold">{currency}</span>
-                    </div>
+              {/* Time Range Filter */}
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 sm:p-4 lg:p-6">
+                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 sm:gap-4">
+                  <div className="flex-1 min-w-0">
+                    <h2 className="font-semibold text-gray-800 text-sm sm:text-base">Sales Reports</h2>
+                    <p className="text-xs sm:text-sm text-gray-600">Analyze your revenue and sales performance</p>
                   </div>
-                  <div className="h-48 sm:h-56 lg:h-64 bg-gray-50 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-200">
-                    <div className="text-center p-4">
-                      <FontAwesomeIcon icon={faChartBar} className="text-3xl sm:text-4xl text-gray-300 mb-2 sm:mb-3" />
-                      <p className="text-gray-500 text-sm sm:text-base">Revenue chart in {currency} will be displayed here</p>
-                      <p className="text-xs sm:text-sm text-gray-400 mt-1 sm:mt-2">Total: {formatCurrency(calculateCompletedRevenue())}</p>
-                    </div>
+                  <div className="flex gap-2">
+                    {['daily', 'weekly', 'monthly'].map((range) => (
+                      <button
+                        key={range}
+                        onClick={() => setTimeRange(range)}
+                        className={`px-3 sm:px-4 py-2 rounded-lg font-medium capitalize transition-colors text-xs sm:text-sm ${
+                          timeRange === range
+                            ? 'bg-orange-500 text-white'
+                            : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {range}
+                      </button>
+                    ))}
                   </div>
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+                {/* Revenue Chart */}
+                <RevenueChart 
+                  data={revenueData} 
+                  currency={currency}
+                />
 
                 {/* Order Analytics */}
-                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-3 sm:p-4 lg:p-6">
+                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6">
                   <h2 className="text-base sm:text-lg font-semibold text-gray-800 mb-3 sm:mb-4">Order Analytics</h2>
                   <div className="space-y-3 sm:space-y-4">
                     {[
