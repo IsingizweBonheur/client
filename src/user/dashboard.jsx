@@ -1361,7 +1361,7 @@ const UserDashboard = () => {
                         type="text"
                         required
                         className="w-full px-3 xs:px-4 py-2.5 xs:py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 bg-white text-sm xs:text-base"
-                        value={customerInfo.name}
+                        // value={customerInfo.name}
                         onChange={(e) => setCustomerInfo({...customerInfo, name: e.target.value})}
                         placeholder="Enter your full name"
                       />
