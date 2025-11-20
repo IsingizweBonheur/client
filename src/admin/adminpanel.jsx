@@ -81,16 +81,31 @@ export default function AdminPanel() {
   // Backend URL
   const BACKEND_URL = API_URL;
 
-  // FIXED: Get proper authentication headers for backend
+  // FIXED: Get proper authentication headers from YOUR users table
   const getAuthHeaders = async () => {
     try {
-      const { data } = await supabase.auth.getSession();
-      const user = data.session?.user;
+      const { data: authData } = await supabase.auth.getSession();
+      const authUser = authData.session?.user;
       
-      if (!user) {
+      if (!authUser) {
         console.error('No user session found');
         return null;
       }
+
+      // Get user from YOUR users table that matches the Supabase Auth email
+      const { data: user, error } = await supabase
+        .from("users")
+        .select("id, email, username")
+        .eq("email", authUser.email)
+        .single();
+
+      if (error || !user) {
+        console.error('User not found in users table:', error);
+        toast.error("User account not found. Please contact administrator.");
+        return null;
+      }
+
+      console.log('Found user in users table:', user);
 
       return {
         'user-id': user.id,
@@ -99,6 +114,7 @@ export default function AdminPanel() {
       };
     } catch (error) {
       console.error('Error getting auth headers:', error);
+      toast.error("Authentication error");
       return null;
     }
   };
@@ -257,6 +273,8 @@ export default function AdminPanel() {
         return;
       }
 
+      console.log('Fetching orders with headers:', authHeaders);
+
       const response = await fetch(`${BACKEND_URL}/api/orders`, {
         headers: authHeaders
       });
@@ -267,6 +285,7 @@ export default function AdminPanel() {
       }
       
       const ordersData = await response.json();
+      console.log('Orders fetched successfully:', ordersData.length);
       setOrders(ordersData);
     } catch (error) {
       console.error("Error fetching orders:", error);
@@ -323,7 +342,7 @@ export default function AdminPanel() {
     }
   };
 
-  // FIXED: Fetch order items with proper error handling and data transformation
+  // FIXED: Fetch order items with proper authentication
   const fetchOrderItems = async (orderId) => {
     try {
       const authHeaders = await getAuthHeaders();
@@ -333,7 +352,7 @@ export default function AdminPanel() {
         return;
       }
 
-      console.log(`Fetching items for order: ${orderId}`);
+      console.log(`Fetching items for order: ${orderId} with headers:`, authHeaders);
 
       const response = await fetch(`${BACKEND_URL}/api/orders/${orderId}/items`, {
         headers: authHeaders
@@ -341,11 +360,12 @@ export default function AdminPanel() {
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to fetch order items');
+        console.error('Server response error:', errorData);
+        throw new Error(errorData.message || `Failed to fetch order items: ${response.status}`);
       }
       
       const itemsData = await response.json();
-      console.log('Raw order items data:', itemsData);
+      console.log('Order items fetched successfully:', itemsData);
 
       // Transform the data to match expected structure
       const transformedItems = itemsData.map(item => ({
@@ -371,6 +391,8 @@ export default function AdminPanel() {
         toast.error("Network error: Cannot connect to server");
       } else if (error.message.includes('401')) {
         toast.error("Session expired. Please log in again.");
+      } else if (error.message.includes('404')) {
+        toast.error("Order not found");
       } else {
         toast.error(error.message || "Failed to load order items");
       }
@@ -389,7 +411,10 @@ export default function AdminPanel() {
 
       const response = await fetch(`${BACKEND_URL}/api/orders/${orderId}`, {
         method: 'PUT',
-        headers: authHeaders,
+        headers: {
+          ...authHeaders,
+          'Content-Type': 'application/json'
+        },
         body: JSON.stringify({ status: newStatus })
       });
 
@@ -447,13 +472,19 @@ export default function AdminPanel() {
       if (editingProduct) {
         response = await fetch(`${BACKEND_URL}/api/products/${editingProduct}`, {
           method: 'PUT',
-          headers: authHeaders,
+          headers: {
+            ...authHeaders,
+            'Content-Type': 'application/json'
+          },
           body: JSON.stringify(productData)
         });
       } else {
         response = await fetch(`${BACKEND_URL}/api/products`, {
           method: 'POST',
-          headers: authHeaders,
+          headers: {
+            ...authHeaders,
+            'Content-Type': 'application/json'
+          },
           body: JSON.stringify(productData)
         });
       }
