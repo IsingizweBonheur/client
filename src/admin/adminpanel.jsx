@@ -78,7 +78,7 @@ export default function AdminPanel() {
     EUR: 0.00074,
   };
 
-  // Backend URL - make sure this matches your backend server
+  // Backend URL
   const BACKEND_URL = API_URL;
 
   // FIXED: Get proper authentication headers for backend
@@ -323,7 +323,7 @@ export default function AdminPanel() {
     }
   };
 
-  // FIXED: Fetch order items
+  // FIXED: Fetch order items with proper error handling and data transformation
   const fetchOrderItems = async (orderId) => {
     try {
       const authHeaders = await getAuthHeaders();
@@ -332,6 +332,8 @@ export default function AdminPanel() {
         toast.error("Authentication required");
         return;
       }
+
+      console.log(`Fetching items for order: ${orderId}`);
 
       const response = await fetch(`${BACKEND_URL}/api/orders/${orderId}/items`, {
         headers: authHeaders
@@ -343,11 +345,35 @@ export default function AdminPanel() {
       }
       
       const itemsData = await response.json();
-      setOrderItems(itemsData);
+      console.log('Raw order items data:', itemsData);
+
+      // Transform the data to match expected structure
+      const transformedItems = itemsData.map(item => ({
+        id: item.product_id || item.id,
+        product_id: item.product_id,
+        product_name: item.product_name || item.products?.product_name || 'Unknown Product',
+        description: item.products?.description || item.description || '',
+        image_url: item.products?.image_url || item.image_url || '',
+        quantity: item.quantity || 1,
+        price: item.price || item.unit_price || item.products?.total_amount || 0,
+        total_amount: item.total_amount || (item.quantity * (item.price || item.unit_price || 0)),
+        unit_price: item.unit_price || item.price || item.products?.total_amount || 0
+      }));
+
+      console.log('Transformed order items:', transformedItems);
+      setOrderItems(transformedItems);
       setSelectedOrder(orderId);
+      
     } catch (error) {
       console.error("Error fetching order items:", error);
-      toast.error(error.message || "Failed to fetch order items");
+      
+      if (error.message.includes('Failed to fetch')) {
+        toast.error("Network error: Cannot connect to server");
+      } else if (error.message.includes('401')) {
+        toast.error("Session expired. Please log in again.");
+      } else {
+        toast.error(error.message || "Failed to load order items");
+      }
     }
   };
 
@@ -880,7 +906,7 @@ export default function AdminPanel() {
                   },
                   {
                     title: "Total Revenue",
-                    value: calculateCompletedRevenue(), // Use the new function here
+                    value: calculateCompletedRevenue(),
                     icon: faMoneyBillWave,
                     color: "bg-indigo-500",
                     isCurrency: true,
@@ -1156,7 +1182,9 @@ export default function AdminPanel() {
                 {/* Order Details */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 order-1 xl:order-2">
                   <div className="p-3 sm:p-4 lg:p-6 border-b border-gray-200">
-                    <h2 className="font-semibold text-gray-800 text-sm sm:text-base">Order Details</h2>
+                    <h2 className="font-semibold text-gray-800 text-sm sm:text-base">
+                      Order Details {selectedOrder && `(#${selectedOrder})`}
+                    </h2>
                   </div>
                   <div className="p-3 sm:p-4 lg:p-6">
                     {selectedOrder ? (
@@ -1164,46 +1192,56 @@ export default function AdminPanel() {
                         <div className="space-y-3 sm:space-y-4">
                           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4">
                             <h3 className="font-semibold text-blue-800 mb-2 text-sm sm:text-base">Customer Information</h3>
-                            {orders.find(o => o.id === selectedOrder) && (
-                              <div className="space-y-1 sm:space-y-2 text-xs sm:text-sm">
-                                <p><strong>Name:</strong> {orders.find(o => o.id === selectedOrder).customer_name}</p>
-                                <p><strong>Phone:</strong> {orders.find(o => o.id === selectedOrder).customer_phone}</p>
-                                <p><strong>Address:</strong> {orders.find(o => o.id === selectedOrder).customer_address}</p>
-                                <p><strong>Order Date:</strong> {formatDate(orders.find(o => o.id === selectedOrder).created_at)}</p>
-                                <p><strong>Status:</strong> 
-                                  <span className={`ml-2 px-2 py-1 rounded text-xs ${getStatusColor(orders.find(o => o.id === selectedOrder).status)}`}>
-                                    {orders.find(o => o.id === selectedOrder).status}
-                                  </span>
-                                </p>
-                              </div>
-                            )}
+                            {(() => {
+                              const currentOrder = orders.find(o => o.id === selectedOrder);
+                              return currentOrder ? (
+                                <div className="space-y-1 sm:space-y-2 text-xs sm:text-sm">
+                                  <p><strong>Name:</strong> {currentOrder.customer_name}</p>
+                                  <p><strong>Phone:</strong> {currentOrder.customer_phone}</p>
+                                  <p><strong>Address:</strong> {currentOrder.customer_address}</p>
+                                  <p><strong>Order Date:</strong> {formatDate(currentOrder.created_at)}</p>
+                                  <p><strong>Status:</strong> 
+                                    <span className={`ml-2 px-2 py-1 rounded text-xs ${getStatusColor(currentOrder.status)}`}>
+                                      {currentOrder.status}
+                                    </span>
+                                  </p>
+                                </div>
+                              ) : (
+                                <p className="text-red-500 text-sm">Order data not found</p>
+                              );
+                            })()}
                           </div>
                           
-                          <h3 className="font-semibold text-gray-800 text-sm sm:text-base">Order Items</h3>
-                          {orderItems.map((item) => (
-                            <div key={item.id} className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 border border-gray-200 rounded-lg">
+                          <h3 className="font-semibold text-gray-800 text-sm sm:text-base">Order Items ({orderItems.length})</h3>
+                          {orderItems.map((item, index) => (
+                            <div key={item.id || index} className="flex items-center gap-2 sm:gap-3 p-2 sm:p-3 border border-gray-200 rounded-lg">
                               <ProductImage
                                 src={item.image_url}
                                 alt={item.product_name}
                                 className="w-12 h-12 sm:w-16 sm:h-16 object-cover rounded-lg flex-shrink-0 bg-gray-100"
                               />
                               <div className="flex-1 min-w-0">
-                                <p className="font-semibold text-gray-800 truncate text-sm sm:text-base">{item.product_name}</p>
-                                <p className="text-xs sm:text-sm text-gray-600 line-clamp-2">{item.description}</p>
+                                <p className="font-semibold text-gray-800 truncate text-sm sm:text-base">
+                                  {item.product_name}
+                                </p>
+                                <p className="text-xs sm:text-sm text-gray-600 line-clamp-2">
+                                  {item.description || 'No description'}
+                                </p>
                                 <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                                  Quantity: {item.quantity} × {formatCurrency(item.unit_price)}
+                                  Quantity: {item.quantity} × {formatCurrency(item.unit_price || item.price)}
                                 </p>
                                 <p className="text-orange-600 font-bold mt-1 text-sm sm:text-base">
-                                  {formatCurrency(item.total_amount)}
+                                  {formatCurrency(item.total_amount || (item.quantity * (item.unit_price || item.price)))}
                                 </p>
                               </div>
                             </div>
                           ))}
+                          
                           <div className="mt-3 sm:mt-4 p-3 sm:p-4 bg-gray-50 rounded-lg border border-gray-200">
                             <div className="flex justify-between items-center font-semibold text-gray-800 text-sm sm:text-base">
                               <span>Order Total:</span>
                               <span className="text-orange-600 text-base sm:text-lg">
-                                {formatCurrency(orderItems.reduce((sum, item) => sum + (item.total_amount || 0), 0))}
+                                {formatCurrency(orderItems.reduce((sum, item) => sum + (item.total_amount || (item.quantity * (item.unit_price || item.price)) || 0), 0))}
                               </span>
                             </div>
                           </div>
@@ -1212,6 +1250,12 @@ export default function AdminPanel() {
                         <div className="text-center text-gray-500 py-6 sm:py-8">
                           <FontAwesomeIcon icon={faBox} className="text-3xl sm:text-4xl mb-2 sm:mb-3 text-gray-300" />
                           <p className="text-sm sm:text-base">No items found for this order</p>
+                          <button
+                            onClick={() => fetchOrderItems(selectedOrder)}
+                            className="mt-2 bg-orange-500 text-white px-3 py-1 rounded text-sm hover:bg-orange-600"
+                          >
+                            Retry
+                          </button>
                         </div>
                       )
                     ) : (
