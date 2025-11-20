@@ -402,41 +402,44 @@ export default function AdminPanel() {
   };
 
   // FIXED: Upload image to backend server
-  const uploadImage = async (file) => {
-    try {
-      setUploading(true);
-      const authHeaders = await getAuthHeaders();
-      
-      if (!authHeaders) {
-        toast.error("Authentication required");
-        return null;
-      }
-
-      const formData = new FormData();
-      formData.append('image', file);
-
-      const response = await fetch(`${BACKEND_URL}/api/upload`, {
-        method: 'POST',
-        headers: authHeaders, // Use the headers directly (they now include Authorization if available)
-        body: formData
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
-      }
-
-      const result = await response.json();
-      toast.success("Image uploaded successfully");
-      return result.imageUrl;
-    } catch (error) {
-      console.error("Error uploading image:", error);
-      toast.error(`Failed to upload image: ${error.message}`);
+ const uploadImage = async (file) => {
+  try {
+    setUploading(true);
+    const authHeaders = await getAuthHeaders();
+    
+    if (!authHeaders) {
+      toast.error("Authentication required");
       return null;
-    } finally {
-      setUploading(false);
     }
-  };
+
+    const formData = new FormData();
+    formData.append('image', file);
+
+    // Remove Content-Type header for FormData - let browser set it automatically
+    const { 'Content-Type': contentType, ...headersWithoutContentType } = authHeaders;
+
+    const response = await fetch(`${BACKEND_URL}/api/upload`, {
+      method: 'POST',
+      headers: headersWithoutContentType, // ✅ FIX: Use headers without Content-Type
+      body: formData
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    toast.success("Image uploaded successfully");
+    return result.imageUrl;
+  } catch (error) {
+    console.error("Error uploading image:", error);
+    toast.error(`Failed to upload image: ${error.message}`);
+    return null;
+  } finally {
+    setUploading(false);
+  }
+};
 
   // Handle file selection
   const handleFileSelect = (event) => {
