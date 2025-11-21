@@ -3,7 +3,7 @@ import { API_URL } from "../config";
 import { createClient } from "@supabase/supabase-js";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { 
-  faPlus, faMinus, faHamburger, faShoppingCart, 
+  faPlus, faMinus, faHamburger, faShoppingCart,faRightToBracket,
   faSearch, faTrash, faCreditCard, faPhone, 
   faEnvelope, faClock, faMapMarkerAlt, faTimes,
   faBars, faImage, faUser, faStar, faAward,
@@ -233,7 +233,7 @@ const ProductCard = React.memo(({ product, onAddToCart, user }) => {
                 : 'bg-orange-400 text-white hover:bg-orange-500 hover:shadow-xl'
             }`}
           >
-            <FontAwesomeIcon icon={faShoppingCart} />
+            <FontAwesomeIcon icon={faRightToBracket} />
             <span>{user ? 'Add to Cart' : 'Login to Order'}</span>
           </motion.button>
         </div>
