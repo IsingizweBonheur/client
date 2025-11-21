@@ -233,7 +233,7 @@ const ProductCard = React.memo(({ product, onAddToCart, user }) => {
                 : 'bg-orange-400 text-white hover:bg-orange-500 hover:shadow-xl'
             }`}
           >
-            <FontAwesomeIcon icon={faRightToBracket} />
+            <FontAwesomeIcon icon={faUser} />
             <span>{user ? 'Add to Cart' : 'Login to Order'}</span>
           </motion.button>
         </div>
