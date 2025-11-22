@@ -1774,7 +1774,7 @@ export default function HomePage() {
 
       console.log("Sending order:", orderData);
 
-      const res = await fetch(`${API_URL}/api/orders`, {
+      const res = await fetch(`${BACKEND_URL}/api/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(orderData)
