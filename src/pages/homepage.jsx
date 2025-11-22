@@ -3,7 +3,7 @@ import { API_URL } from "../config";
 import { createClient } from "@supabase/supabase-js";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { 
-  faPlus, faMinus, faHamburger, faShoppingCart,faRightToBracket,
+  faPlus, faMinus, faHamburger, faShoppingCart, 
   faSearch, faTrash, faCreditCard, faPhone, 
   faEnvelope, faClock, faMapMarkerAlt, faTimes,
   faBars, faImage, faUser, faStar, faAward,
@@ -21,6 +21,7 @@ import { Autoplay, Pagination, Navigation } from 'swiper/modules';
 import 'swiper/css';
 import 'swiper/css/pagination';
 import 'swiper/css/navigation';
+
 
 // Supabase for fetching products only
 const supabaseUrl = "https://kuxrbtxmiwjuabxfbqfx.supabase.co";
@@ -86,6 +87,7 @@ const FALLBACK_IMAGES = {
 };
 
 const BACKEND_URL = "https://backend-wgm2.onrender.com";
+const API_URL=BACKEND_URL;
 
 // Centralized Image Hook - SINGLE SOURCE OF TRUTH
 const useProductImage = (product) => {
@@ -233,7 +235,7 @@ const ProductCard = React.memo(({ product, onAddToCart, user }) => {
                 : 'bg-orange-400 text-white hover:bg-orange-500 hover:shadow-xl'
             }`}
           >
-            <FontAwesomeIcon icon={faUser} />
+            <FontAwesomeIcon icon={faPlus} />
             <span>{user ? 'Add to Cart' : 'Login to Order'}</span>
           </motion.button>
         </div>
@@ -1772,7 +1774,7 @@ export default function HomePage() {
 
       console.log("Sending order:", orderData);
 
-      const res = await fetch("http://localhost:5000/api/orders", {
+      const res = await fetch(`${API_URL}/api/orders`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(orderData)
