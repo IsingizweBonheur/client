@@ -166,7 +166,7 @@ const ProductCard = React.memo(({ product, onAddToCart }) => {
             className="bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white px-3 xs:px-4 sm:px-6 py-2 xs:py-2.5 sm:py-3 rounded-lg sm:rounded-xl transition-all duration-300 flex items-center space-x-1 xs:space-x-2 text-xs xs:text-sm sm:text-base font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 min-h-[44px] min-w-[44px]"
             aria-label={`Add ${product.product_name} to cart`}
           >
-            <FontAwesomeIcon icon={faPlus} className="text-xs xs:text-sm" />
+            <FontAwesomeIcon icon={faShoppingCart} className="text-xs xs:text-sm" />
             <span className="hidden xs:inline">Add to Cart</span>
           </button>
         </div>
