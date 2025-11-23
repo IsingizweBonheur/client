@@ -1557,7 +1557,7 @@ const CheckoutForm = React.memo(({
             type="text"
             required
             className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500 transition-all duration-300 bg-white/80 backdrop-blur-sm text-sm sm:text-base"
-            {/* value={customerInfo.name} */}
+            value={customerInfo.name} 
             onChange={(e) => onCustomerInfoChange({...customerInfo, name: e.target.value})}
             placeholder="Enter your full name"
           />
