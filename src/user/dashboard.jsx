@@ -295,7 +295,7 @@ const OrderTracking = React.memo(({ order, onClose }) => {
               {order.cart?.map((item, index) => (
                 <div key={index} className="flex justify-between items-center bg-gray-50 p-3 xs:p-4 rounded-lg border border-gray-200">
                   <span className="text-gray-700 text-sm xs:text-base flex-1 truncate mr-2">
-                    {item.product_name} x {item.quantity}
+                    {item.product_name} = {item.quantity}
                   </span>
                   <span className="font-semibold text-green-600 text-sm xs:text-base whitespace-nowrap">
                     {new Intl.NumberFormat("rw-RW", { style: "currency", currency: "RWF" }).format((item.total_amount || item.price) * item.quantity)}
