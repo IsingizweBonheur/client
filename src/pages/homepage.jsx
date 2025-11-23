@@ -31,7 +31,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 // Phone numbers
 const PHONE_NUMBERS = {
   whatsapp: "250788295765",
-  call: "0788295765",
+  call: "0793761940",
   international: "+250788295765"
 };
 
@@ -235,7 +235,7 @@ const ProductCard = React.memo(({ product, onAddToCart, user }) => {
                 : 'bg-orange-400 text-white hover:bg-orange-500 hover:shadow-xl'
             }`}
           >
-            <FontAwesomeIcon icon={faPlus} />
+            <FontAwesomeIcon icon={faShoppingCart} />
             <span>{user ? 'Add to Cart' : 'Login to Order'}</span>
           </motion.button>
         </div>
