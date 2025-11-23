@@ -18,7 +18,6 @@ import {
   faEllipsisV, faEllipsisH
 } from "@fortawesome/free-solid-svg-icons";
 import { toast } from "react-toastify";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 export default function AdminPanel() {
   const navigate = useNavigate();
@@ -72,10 +71,6 @@ export default function AdminPanel() {
     totalProducts: 0
   });
 
-  // Revenue chart data state
-  const [revenueData, setRevenueData] = useState([]);
-  const [timeRange, setTimeRange] = useState('monthly');
-
   // Currency conversion rates
   const exchangeRates = {
     FRW: 1,
@@ -85,181 +80,6 @@ export default function AdminPanel() {
 
   // Backend URL
   const BACKEND_URL = API_URL;
-
-  // RevenueChart Component
-  const RevenueChart = ({ data, currency = 'FRW' }) => {
-    const CustomTooltip = ({ active, payload, label }) => {
-      if (active && payload && payload.length) {
-        return (
-          <div className="bg-white p-3 border border-gray-200 rounded-lg shadow-lg">
-            <p className="font-semibold text-gray-800">{label}</p>
-            <p className="text-blue-600">
-              {currency} {payload[0].value.toLocaleString()}
-            </p>
-          </div>
-        );
-      }
-      return null;
-    };
-
-    const totalRevenue = data.reduce((sum, item) => sum + item.revenue, 0);
-    const colors = ['#3B82F6', '#60A5FA', '#93C5FD', '#BFDBFE', '#DBEAFE', '#EFF6FF'];
-
-    return (
-      <div className="bg-white rounded-lg shadow-sm p-4 border border-gray-200">
-        <div className="mb-4">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-lg font-semibold text-gray-800">Revenue Overview</h3>
-            <span className="text-sm text-gray-600">Currency: {currency}</span>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-green-600">
-              {currency} {totalRevenue.toLocaleString()}
-            </p>
-            <p className="text-sm text-gray-600">Total Revenue</p>
-          </div>
-        </div>
-
-        <div className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={data}
-              margin={{
-                top: 20,
-                right: 30,
-                left: 20,
-                bottom: 60,
-              }}
-            >
-              <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-              <XAxis 
-                dataKey="name" 
-                angle={-45}
-                textAnchor="end"
-                height={80}
-                tick={{ fontSize: 12 }}
-              />
-              <YAxis 
-                tickFormatter={(value) => `${currency} ${(value / 1000).toFixed(0)}K`}
-                tick={{ fontSize: 12 }}
-              />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar 
-                dataKey="revenue" 
-                radius={[4, 4, 0, 0]}
-              >
-                {data.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={colors[index % colors.length]} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-3 justify-center">
-          {data.map((item, index) => (
-            <div key={item.name} className="flex items-center">
-              <div 
-                className="w-3 h-3 rounded-full mr-2"
-                style={{ backgroundColor: colors[index % colors.length] }}
-              ></div>
-              <span className="text-sm text-gray-600">{item.name}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
-  // Generate revenue data based on completed orders
-  const generateRevenueData = () => {
-    const completedOrders = orders.filter(order => order.status === 'completed');
-    
-    if (completedOrders.length === 0) {
-      if (timeRange === 'daily') {
-        return ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(day => ({
-          name: day,
-          revenue: 0
-        }));
-      } else if (timeRange === 'weekly') {
-        return ['Week 1', 'Week 2', 'Week 3', 'Week 4'].map(week => ({
-          name: week,
-          revenue: 0
-        }));
-      } else {
-        return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'].map(month => ({
-          name: month,
-          revenue: 0
-        }));
-      }
-    }
-
-    if (timeRange === 'daily') {
-      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      const dayRevenue = days.map(day => ({ name: day, revenue: 0 }));
-      
-      completedOrders.forEach(order => {
-        if (order.created_at) {
-          const orderDate = new Date(order.created_at);
-          const dayIndex = orderDate.getDay();
-          dayRevenue[dayIndex].revenue += order.total_amount || 0;
-        }
-      });
-      
-      return dayRevenue;
-      
-    } else if (timeRange === 'weekly') {
-      const weeklyRevenue = [
-        { name: 'Week 1', revenue: 0 },
-        { name: 'Week 2', revenue: 0 },
-        { name: 'Week 3', revenue: 0 },
-        { name: 'Week 4', revenue: 0 }
-      ];
-      
-      completedOrders.forEach(order => {
-        if (order.created_at) {
-          const orderDate = new Date(order.created_at);
-          const weekOfMonth = Math.floor((orderDate.getDate() - 1) / 7);
-          const weekIndex = Math.min(weekOfMonth, 3);
-          weeklyRevenue[weekIndex].revenue += order.total_amount || 0;
-        }
-      });
-      
-      return weeklyRevenue;
-      
-    } else {
-      const monthlyRevenue = [
-        { name: 'Jan', revenue: 0 },
-        { name: 'Feb', revenue: 0 },
-        { name: 'Mar', revenue: 0 },
-        { name: 'Apr', revenue: 0 },
-        { name: 'May', revenue: 0 },
-        { name: 'Jun', revenue: 0 },
-        { name: 'Jul', revenue: 0 },
-        { name: 'Aug', revenue: 0 },
-        { name: 'Sep', revenue: 0 },
-        { name: 'Oct', revenue: 0 },
-        { name: 'Nov', revenue: 0 },
-        { name: 'Dec', revenue: 0 }
-      ];
-      
-      completedOrders.forEach(order => {
-        if (order.created_at) {
-          const orderDate = new Date(order.created_at);
-          const monthIndex = orderDate.getMonth();
-          monthlyRevenue[monthIndex].revenue += order.total_amount || 0;
-        }
-      });
-      
-      const monthsWithData = monthlyRevenue.filter(month => month.revenue > 0);
-      if (monthsWithData.length > 0) {
-        return monthsWithData.slice(-6);
-      }
-      
-      const currentMonth = new Date().getMonth();
-      return monthlyRevenue.slice(Math.max(0, currentMonth - 5), currentMonth + 1);
-    }
-  };
 
   // Enhanced authentication headers
   const getAuthHeaders = async () => {
@@ -351,11 +171,6 @@ export default function AdminPanel() {
 
     return () => window.removeEventListener('resize', handleResize);
   }, []);
-
-  // Generate revenue data when orders or time range changes
-  useEffect(() => {
-    setRevenueData(generateRevenueData());
-  }, [orders, timeRange]);
 
   // Fixed image URL handling
   const getImageUrl = (url) => {
@@ -991,7 +806,7 @@ export default function AdminPanel() {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col lg:flex-row">
+    <div className="min-h-screen bg-gray-50 flex">
       {/* Toast Container */}
       <div className="toast-container">
         {/* Toast messages will appear here */}
@@ -1023,12 +838,12 @@ export default function AdminPanel() {
         </div>
       )}
 
-      {/* Sidebar - Increased Height */}
+      {/* Fixed Sidebar */}
       <div className={`
         ${sidebarOpen ? "translate-x-0" : "-translate-x-full"} 
-        lg:translate-x-0 lg:w-72 w-80 bg-white shadow-xl transition-all duration-300 flex flex-col fixed lg:relative h-screen z-30
+        lg:translate-x-0 lg:w-72 w-80 bg-white shadow-xl transition-all duration-300 flex flex-col fixed h-screen z-30
       `}>
-        {/* Increased padding and spacing in sidebar */}
+        {/* Sidebar Header */}
         <div className="p-6 border-b border-gray-200 bg-orange-50">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-orange-600 flex items-center gap-3">
@@ -1044,8 +859,8 @@ export default function AdminPanel() {
           </div>
         </div>
 
-        {/* Navigation with increased spacing */}
-        <nav className="flex-1 p-6 space-y-3">
+        {/* Navigation */}
+        <nav className="flex-1 p-6 space-y-3 overflow-y-auto">
           {[
             { id: "dashboard", icon: faHome, label: "Dashboard" },
             { id: "orders", icon: faShoppingCart, label: "Orders" },
@@ -1070,7 +885,7 @@ export default function AdminPanel() {
           ))}
         </nav>
 
-        {/* Footer section with increased spacing */}
+        {/* Footer section */}
         <div className="p-6 border-t border-gray-200 bg-gray-50">
           <div className="flex items-center gap-4 p-4 text-gray-600 mb-4 bg-white rounded-lg shadow-sm">
             <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
@@ -1106,7 +921,7 @@ export default function AdminPanel() {
       </div>
 
       {/* Main Content */}
-      <div className={`flex-1 overflow-auto transition-all duration-300 ${isMobile ? 'mt-16 pb-16' : ''}`}>
+      <div className={`flex-1 overflow-auto transition-all duration-300 ${isMobile ? 'mt-16 pb-16' : 'lg:ml-72'}`}>
         <div className="p-4 lg:p-6">
           {/* Header */}
           <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4 mb-6">
@@ -1625,38 +1440,17 @@ export default function AdminPanel() {
           {/* Reports Tab */}
           {activeTab === "reports" && (
             <div className="space-y-6">
-              {/* Time Range Filter */}
+              {/* Reports Header */}
               <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
                   <div className="flex-1 min-w-0">
                     <h2 className="font-semibold text-gray-800">Sales Reports</h2>
                     <p className="text-sm text-gray-600">Analyze your revenue and sales performance</p>
                   </div>
-                  <div className="flex gap-2">
-                    {['daily', 'weekly', 'monthly'].map((range) => (
-                      <button
-                        key={range}
-                        onClick={() => setTimeRange(range)}
-                        className={`px-4 py-2 rounded-lg font-medium capitalize transition-colors text-sm ${
-                          timeRange === range
-                            ? 'bg-orange-500 text-white'
-                            : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                        }`}
-                      >
-                        {range}
-                      </button>
-                    ))}
-                  </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Revenue Chart */}
-                <RevenueChart 
-                  data={revenueData} 
-                  currency={currency}
-                />
-
+              <div className="grid grid-cols-1 gap-6">
                 {/* Order Analytics */}
                 <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                   <h2 className="text-lg font-semibold text-gray-800 mb-4">Order Analytics</h2>
