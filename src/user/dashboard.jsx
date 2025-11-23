@@ -261,7 +261,7 @@ const OrderTracking = React.memo(({ order, onClose }) => {
 
   const steps = getStatusSteps(order.status);
   
-  const RESTAURANT_PHONE = "0788295765";
+  const RESTAURANT_PHONE = "0793761940";
 
   const handleCallRestaurant = useCallback(() => {
     if (window.confirm(`Call restaurant at ${RESTAURANT_PHONE}?`)) {
@@ -424,7 +424,7 @@ const PaymentMethods = React.memo(({
   cartSummary, 
   formatPrice 
 }) => {
-  const MOMO_NUMBER = "0788295765";
+  const MOMO_NUMBER = "0793761940";
   const MOMO_OWNER = "TUYISENGE Gashugi Arnaud";
 
   const handleCopyNumber = () => {
