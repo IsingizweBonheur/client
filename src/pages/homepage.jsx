@@ -31,7 +31,7 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 // Phone numbers
 const PHONE_NUMBERS = {
   whatsapp: "250788295765",
-  call: "0793761940",
+  call: "0723367238",
   international: "+250788295765"
 };
 
